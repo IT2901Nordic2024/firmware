@@ -1,0 +1,25 @@
+{
+    "format-version": 0,
+    "time": 1709568764,
+    "files": [
+        {
+            "load_address": 98304,
+            "version_MCUBOOT": "0.0.0+0",
+            "type": "application",
+            "board": "thingy91_nrf9160",
+            "soc": "nRF9160_SICA",
+            "size": 269020,
+            "file": "app_update.bin",
+            "modtime": 1709568763
+        }
+    ],
+    "name": "firmware",
+    "firmware": {
+        "zephyr": {
+            "revision": "f78cd136ce3f3c1bc34185bdeed7a5c6a7e845bf-dirty"
+        },
+        "nrf": {
+            "revision": "87355af5914e498f449b7a68bb5641031a7b8885"
+        }
+    }
+}
