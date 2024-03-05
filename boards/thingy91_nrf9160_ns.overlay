@@ -15,4 +15,13 @@
 	chosen {
 		nordic,modem-trace-uart = &uart1;
 	};
+	
+	/* ... */
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+	/* ... */
+		sw0 = &button0;
+	};
+	
 };
+

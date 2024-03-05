@@ -18,6 +18,16 @@
 #include <modem/modem_info.h>
 
 #include "json_payload.h"
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+
+#define SW0_NODE	DT_ALIAS(sw0) 
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(SW0_NODE, gpios);
+
+
+/* STEP 5 - Define a variable of type static struct gpio_callback */
+static struct gpio_callback button_cb_data;
 
 /* Register log module */
 LOG_MODULE_REGISTER(aws_iot_sample, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
@@ -33,6 +43,8 @@ LOG_MODULE_REGISTER(aws_iot_sample, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	LOG_ERR("Fatal error! Rebooting the device.");	\
 	LOG_PANIC();					\
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
+
+
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -118,6 +130,52 @@ static int aws_iot_client_init(void)
 }
 
 /* System Workqueue handlers. */
+void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+{
+    int err;
+	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
+	struct payload payload = {
+		.state.reported.uptime = k_uptime_get(),
+		.state.reported.app_version = CONFIG_AWS_IOT_SAMPLE_APP_VERSION,
+	};
+	struct aws_iot_data tx_data = {
+		.qos = MQTT_QOS_0_AT_MOST_ONCE,
+		.topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
+	};
+
+	if (IS_ENABLED(CONFIG_MODEM_INFO)) {
+		char modem_version_temp[MODEM_FIRMWARE_VERSION_SIZE_MAX];
+
+		err = modem_info_get_fw_version(modem_version_temp,
+						ARRAY_SIZE(modem_version_temp));
+		if (err) {
+			LOG_ERR("modem_info_get_fw_version, error: %d", err);
+			FATAL_ERROR();
+			return;
+		}
+
+		payload.state.reported.modem_version = modem_version_temp;
+	}
+
+	err = json_payload_construct(message, sizeof(message), &payload);
+	if (err) {
+		LOG_ERR("json_payload_construct, error: %d", err);
+		FATAL_ERROR();
+		return;
+	}
+
+	tx_data.ptr = message;
+	tx_data.len = strlen(message);
+
+	LOG_INF("Publishing message: %s to AWS IoT shadow", message);
+
+	err = aws_iot_send(&tx_data);
+	if (err) {
+		LOG_ERR("aws_iot_send, error: %d", err);
+		FATAL_ERROR();
+		return;
+	}
+}
 
 static void shadow_update_work_fn(struct k_work *work)
 {
@@ -201,10 +259,6 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 			"from the previous session");
 	}
 
-	/* Mark image as working to avoid reverting to the former image after a reboot. */
-#if defined(CONFIG_BOOTLOADER_MCUBOOT)
-	boot_write_img_confirmed();
-#endif
 
 	/* Start sequential updates to AWS IoT. */
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
@@ -357,6 +411,19 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb,
 
 int main(void)
 {
+	int ret;
+	if (!device_is_ready(button.port)) {
+		return -1;
+	}
+		/* STEP 3 - Configure the interrupt on the button's pin */
+	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE );
+
+	/* STEP 6 - Initialize the static struct gpio_callback variable   */
+    gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin)); 	
+	
+	/* STEP 7 - Add the callback function by calling gpio_add_callback()   */
+	gpio_add_callback(button.port, &button_cb_data);
+
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
 	int err;
