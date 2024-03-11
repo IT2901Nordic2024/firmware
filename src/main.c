@@ -31,7 +31,7 @@ static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
 static struct gpio_callback button_cb_data;
 
 /* Register log module */
-LOG_MODULE_REGISTER(aws_iot_sample, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
+LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 
 /* Macros used to subscribe to specific Zephyr NET management events. */
 #define L4_EVENT_MASK (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
@@ -181,6 +181,7 @@ static void shadow_update_work_fn(struct k_work *work)
 void button_pressed()
 {
 	printk("Button pressed %" PRIu32 "\n", k_cycle_get_32());
+	/* send shadow_update_work in front of the queue */
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
@@ -397,8 +398,6 @@ int main(void)
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
 	/* init the aws connection */
-	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
-
 	int err;
 
 	/* Setup handler for Zephyr NET Connection Manager events. */
@@ -409,9 +408,7 @@ int main(void)
 	net_mgmt_init_event_callback(&conn_cb, connectivity_event_handler, CONN_LAYER_EVENT_MASK);
 	net_mgmt_add_event_callback(&conn_cb);
 
-	/* Connecting to the configured connectivity layer.
-	 * Wi-Fi or LTE depending on the board that the sample was built for.
-	 */
+	/* Connecting to the configured connectivity layer. */
 	LOG_INF("Bringing network interface up and connecting to the network");
 
 	err = conn_mgr_all_if_up(true);
