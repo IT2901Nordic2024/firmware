@@ -22,22 +22,5 @@
 	/* ... */
 		sw0 = &button0;
 	};
-	/*
-	soc {
-    gpio0: gpio@0 {
-      status = "okay";
-      gpio-controller;
-      #gpio-cells = <2>;
-    };
-  };
-
-  buttons {
-    compatible = "gpio-keys";
-    button0: button_0 {
-      gpios = < &gpio0 PIN FLAGS >;
-      label = "User button";
-    };
-  };
-	*/
 };
 
