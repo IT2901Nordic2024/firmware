@@ -28,8 +28,6 @@ endchoice
 
 endif # EXTERNAL_SENSORS_IMPACT_DETECTION
 
-module = EXTERNAL_SENSORS
-module-str = External sensors
-source "subsys/logging/Kconfig.template.log_config"
+
 
 endif # EXTERNAL_SENSORS
