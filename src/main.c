@@ -22,11 +22,12 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 
-#define SW0_NODE	DT_ALIAS(sw0) 
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(SW0_NODE, gpios);
-
-
-/* STEP 5 - Define a variable of type static struct gpio_callback */
+#define SW0_NODE	DT_ALIAS(sw0)
+#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
+#error "Unsupported board: sw0 devicetree alias is not defined"
+#endif
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
+							      {0});
 static struct gpio_callback button_cb_data;
 
 /* Register log module */
@@ -129,54 +130,6 @@ static int aws_iot_client_init(void)
 	return 0;
 }
 
-/* System Workqueue handlers. */
-void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
-{
-    int err;
-	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
-	struct payload payload = {
-		.state.reported.uptime = k_uptime_get(),
-		.state.reported.app_version = CONFIG_AWS_IOT_SAMPLE_APP_VERSION,
-	};
-	struct aws_iot_data tx_data = {
-		.qos = MQTT_QOS_0_AT_MOST_ONCE,
-		.topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
-	};
-
-	if (IS_ENABLED(CONFIG_MODEM_INFO)) {
-		char modem_version_temp[MODEM_FIRMWARE_VERSION_SIZE_MAX];
-
-		err = modem_info_get_fw_version(modem_version_temp,
-						ARRAY_SIZE(modem_version_temp));
-		if (err) {
-			LOG_ERR("modem_info_get_fw_version, error: %d", err);
-			FATAL_ERROR();
-			return;
-		}
-
-		payload.state.reported.modem_version = modem_version_temp;
-	}
-
-	err = json_payload_construct(message, sizeof(message), &payload);
-	if (err) {
-		LOG_ERR("json_payload_construct, error: %d", err);
-		FATAL_ERROR();
-		return;
-	}
-
-	tx_data.ptr = message;
-	tx_data.len = strlen(message);
-
-	LOG_INF("Publishing message: %s to AWS IoT shadow", message);
-
-	err = aws_iot_send(&tx_data);
-	if (err) {
-		LOG_ERR("aws_iot_send, error: %d", err);
-		FATAL_ERROR();
-		return;
-	}
-}
-
 static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
@@ -222,10 +175,15 @@ static void shadow_update_work_fn(struct k_work *work)
 		FATAL_ERROR();
 		return;
 	}
-
-	(void)k_work_reschedule(&shadow_update_work,
-				K_SECONDS(CONFIG_AWS_IOT_SAMPLE_PUBLICATION_INTERVAL_SECONDS));
 }
+
+/* System Workqueue handlers. */
+void button_pressed()
+{
+	printk("Button pressed %" PRIu32 "\n", k_cycle_get_32());
+	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+}
+
 
 static void connect_work_fn(struct k_work *work)
 {
@@ -260,7 +218,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	}
 
 
-	/* Start sequential updates to AWS IoT. */
+	/* Start sequential updates to AWS IoT */
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
@@ -411,19 +369,34 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb,
 
 int main(void)
 {
+	/* init button, when button is pressed call function button-pressed */
 	int ret;
-	if (!device_is_ready(button.port)) {
-		return -1;
+
+	if (!gpio_is_ready_dt(&button)) {
+		printk("Error: button device %s is not ready\n",
+		       button.port->name);
+		return 0;
 	}
-		/* STEP 3 - Configure the interrupt on the button's pin */
-	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE );
 
-	/* STEP 6 - Initialize the static struct gpio_callback variable   */
-    gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin)); 	
-	
-	/* STEP 7 - Add the callback function by calling gpio_add_callback()   */
+	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	if (ret != 0) {
+		printk("Error %d: failed to configure %s pin %d\n",
+		       ret, button.port->name, button.pin);
+		return 0;
+	}
+
+	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+	if (ret != 0) {
+		printk("Error %d: failed to configure interrupt on %s pin %d\n",
+			ret, button.port->name, button.pin);
+		return 0;
+	}
+
+	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
+	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
+	/* init the aws connection */
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
 	int err;
