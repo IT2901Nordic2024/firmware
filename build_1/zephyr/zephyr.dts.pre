@@ -1073,31 +1073,4 @@ timer2: timer@11000 {
  };
 };
 # 0 "<command-line>" 2
-# 1 "./boards/thingy91_nrf9160_ns.overlay" 1
-
-
-
-
-
-
-
-&uart1 {
- status = "okay";
- current-speed = < 1000000 >;
- hw-flow-control;
-};
-
-/ {
- chosen {
-  nordic,modem-trace-uart = &uart1;
- };
-
-
-
- aliases {
-
-  sw0 = &button0;
- };
-};
-# 0 "<command-line>" 2
 # 1 "/opt/nordic/ncs/v2.5.1/zephyr/misc/empty_file.c"

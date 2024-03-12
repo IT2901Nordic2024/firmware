@@ -218,13 +218,20 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 			"from the previous session");
 	}
 
+  /* set button pressed as buttons funcion */
+	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+	gpio_add_callback(button.port, &button_cb_data);
+	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
 	/* Start sequential updates to AWS IoT */
-	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+	/*(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);*/
 }
 
 static void on_aws_iot_evt_disconnected(void)
 {
+	/* Remove button callback */
+	gpio_remove_callback(button.port, &button_cb_data);
+	printk("Button at %s pin %d has been deactivated\n", button.port->name, button.pin);
 	(void)k_work_cancel_delayable(&shadow_update_work);
 	(void)k_work_reschedule(&connect_work, K_SECONDS(5));
 }
@@ -392,10 +399,6 @@ int main(void)
 			ret, button.port->name, button.pin);
 		return 0;
 	}
-
-	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
-	gpio_add_callback(button.port, &button_cb_data);
-	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
 	/* init the aws connection */
 	int err;

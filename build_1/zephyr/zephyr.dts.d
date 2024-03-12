@@ -22,5 +22,4 @@ empty_file.o: /opt/nordic/ncs/v2.5.1/zephyr/misc/empty_file.c \
  /opt/nordic/ncs/v2.5.1/nrf/boards/arm/thingy91_nrf9160/thingy91_nrf9160_common.dts \
  /opt/nordic/ncs/v2.5.1/nrf/boards/arm/thingy91_nrf9160/thingy91_nrf9160_common-pinctrl.dtsi \
  /opt/nordic/ncs/v2.5.1/nrf/boards/arm/thingy91_nrf9160/thingy91_nrf9160_partition_conf.dts \
- /opt/nordic/ncs/v2.5.1/nrf/applications/firmware/boards/thingy91_nrf9160_ns.overlay \
- boards/thingy91_nrf9160_ns.overlay
+ /opt/nordic/ncs/v2.5.1/nrf/applications/firmware/boards/thingy91_nrf9160_ns.overlay
