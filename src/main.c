@@ -16,11 +16,13 @@
 #include <stdlib.h>
 #include <hw_id.h>
 #include <modem/modem_info.h>
-
 #include "json_payload.h"
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/drivers/sensor.h>
+
 
 #define SW0_NODE	DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
@@ -45,7 +47,22 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	LOG_PANIC();					\
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
+/* additional definitions */
+/* Sensor device */
+static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
 
+/* Sensor channels */
+static const enum sensor_channel channels[] = {
+	SENSOR_CHAN_ACCEL_X,
+	SENSOR_CHAN_ACCEL_Y,
+	SENSOR_CHAN_ACCEL_Z,
+};
+
+/* Sensor data */
+struct sensor_value accel[3];
+char accelX[10];
+char accelY[10];
+char accelZ[10];
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -61,6 +78,44 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 
 /* Static functions */
+static int fetch_accels(const struct device *dev)
+{
+	/*
+	*	Fetch sensor data from the accelerometer sensor
+	*	saves and prints the sensor data as string to be sent to AWS IoT
+	*/
+	int ret;
+	/*	Check if device is ready, if not return 0	*/
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
+	}
+	else {
+		printk("sensor: device ready.\n");
+	}
+
+	ret = sensor_sample_fetch(dev);
+	if (ret < 0) {
+		printk("sensor_sample_fetch() failed: %d\n", ret);
+		return ret;
+	}
+
+	/* Get sensor data */
+	for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
+		ret = sensor_channel_get(dev, channels[i], &accel[i]);
+		if (ret < 0) {
+			printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+			return ret;
+		}
+	}
+	snprintf(accelX, sizeof(accelX), "%f", sensor_value_to_double(&accel[0]));
+	snprintf(accelY, sizeof(accelY), "%f", sensor_value_to_double(&accel[1]));
+	snprintf(accelZ, sizeof(accelZ), "%f", sensor_value_to_double(&accel[2]));
+	printf("Value of X: %s\n", accelX);
+	printf("Value of Y: %s\n", accelY);
+	printf("Value of Z: %s\n", accelZ);
+	return 0;
+}
 
 static int app_topics_subscribe(void)
 {
@@ -134,10 +189,22 @@ static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
 	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
+	/* Fetch sensor data */
+	fetch_accels(sensor);
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
-		.state.reported.app_version = CONFIG_AWS_IOT_SAMPLE_APP_VERSION,
+		.state.reported.accelX = accelX,
+		.state.reported.accelY = accelY,
+		.state.reported.accelZ = accelZ,
 	};
+
+	err = json_payload_construct(message, sizeof(message), &payload);
+	if (err) {
+			LOG_ERR("json_payload_construct, error: %d", err);
+			FATAL_ERROR();
+			return;
+	}
+
 	struct aws_iot_data tx_data = {
 		.qos = MQTT_QOS_0_AT_MOST_ONCE,
 		.topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
@@ -153,8 +220,6 @@ static void shadow_update_work_fn(struct k_work *work)
 			FATAL_ERROR();
 			return;
 		}
-
-		payload.state.reported.modem_version = modem_version_temp;
 	}
 
 	err = json_payload_construct(message, sizeof(message), &payload);
