@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/CMakeFiles/tfm"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/CMakeFiles/tfm.rule"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/CMakeFiles/tfm-complete.rule"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/tfm-prefix/src/tfm-stamp/tfm-build.rule"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/tfm-prefix/src/tfm-stamp/tfm-configure.rule"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/tfm-prefix/src/tfm-stamp/tfm-download.rule"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/tfm-prefix/src/tfm-stamp/tfm-install.rule"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/tfm-prefix/src/tfm-stamp/tfm-mkdir.rule"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/tfm-prefix/src/tfm-stamp/tfm-patch.rule"
+		},
+		{
+			"file" : "/opt/nordic/ncs/v2.5.1/nrf/applications/firmware/build_1/modules/trusted-firmware-m/tfm-prefix/src/tfm-stamp/tfm-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"tfm"
+		],
+		"name" : "tfm"
+	}
+}
