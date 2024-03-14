@@ -23,7 +23,7 @@
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/drivers/sensor.h>
 
-
+/* button */
 #define SW0_NODE	DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
 #error "Unsupported board: sw0 devicetree alias is not defined"
@@ -48,22 +48,28 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
 /* additional definitions */
+
+/* 
+*based on sensor sample 
+*/
 /* Sensor device */
 static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
-
 /* Sensor channels */
 static const enum sensor_channel channels[] = {
 	SENSOR_CHAN_ACCEL_X,
 	SENSOR_CHAN_ACCEL_Y,
 	SENSOR_CHAN_ACCEL_Z,
 };
-
 /* Sensor data */
 struct sensor_value accel[3];
 char accelX[10];
 char accelY[10];
 char accelZ[10];
-
+/* 
+* based on sensor sample 
+*/
+int side;
+int newSide;
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -79,6 +85,9 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 
 /* Static functions */
+/*
+*Based on sensor sample
+*/
 static int fetch_accels(const struct device *dev)
 {
 	/*
@@ -112,12 +121,14 @@ static int fetch_accels(const struct device *dev)
 	snprintf(accelX, sizeof(accelX), "%f", sensor_value_to_double(&accel[0]));
 	snprintf(accelY, sizeof(accelY), "%f", sensor_value_to_double(&accel[1]));
 	snprintf(accelZ, sizeof(accelZ), "%f", sensor_value_to_double(&accel[2]));
-	printf("Value of X: %s\n", accelX);
-	printf("Value of Y: %s\n", accelY);
-	printf("Value of Z: %s\n", accelZ);
+	// printf("Value of X: %s\n", accelX);
+	// printf("Value of Y: %s\n", accelY);
+	// printf("Value of Z: %s\n", accelZ);
 	return 0;
 }
-
+/*
+*Based on sensor sample
+*/
 static int get_side(const struct device *dev)
 {
 	int ret;
@@ -225,14 +236,16 @@ static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
 	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
-	/* Fetch sensor data */
+	/* Fetch and send sensor data */
 	fetch_accels(sensor);
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
 		.state.reported.accelX = accelX,
 		.state.reported.accelY = accelY,
 		.state.reported.accelZ = accelZ,
-	};
+	}; 
+
+
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
@@ -287,6 +300,19 @@ void event_trigger()
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
+/* function with a while loop that checks if side is changed */
+static void check_position(void) {
+   while (true) {
+        newSide = get_side(sensor);
+				/* if side is changed send event trigger */
+        if (side != 0 && side != newSide) {
+            side = newSide;
+            event_trigger();
+        }
+        k_msleep(2000);
+    }
+}
+
 
 static void connect_work_fn(struct k_work *work)
 {
@@ -325,8 +351,8 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	gpio_add_callback(button.port, &button_cb_data);
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
-	/* Start sequential updates to AWS IoT */
-	/*(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);*/
+	/* Start to check the position */
+	check_position();
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -479,6 +505,9 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb,
 
 int main(void)
 {
+	/* set side and create new side function to detect change */
+	side = get_side(sensor);
+
 	/* init button, when button is pressed call function button-pressed */
 	int ret;
 
@@ -538,21 +567,6 @@ int main(void)
 	 */
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
-	}
-
-	/* create side and new side function to detect change */
-	int side = get_side(sensor);
-	int newSide = get_side(sensor);
-
-	/* while loop that checks if side is changed */
-	while (1) {
-		newSide = get_side(sensor);
-		if (side != 0 && side != newSide) {
-			/* if side is changed, set side to new side, and trigger an event */
-			side = newSide;
-			event_trigger();
-		}
-		k_msleep(2000);
 	}
 
 	return 0;
