@@ -64,6 +64,7 @@ char accelX[10];
 char accelY[10];
 char accelZ[10];
 
+
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
 static struct net_mgmt_event_callback conn_cb;
@@ -115,6 +116,41 @@ static int fetch_accels(const struct device *dev)
 	printf("Value of Y: %s\n", accelY);
 	printf("Value of Z: %s\n", accelZ);
 	return 0;
+}
+
+static int get_side(const struct device *dev)
+{
+	int ret;
+	/*	Check if device is ready, if not return 0	*/
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
+	}
+
+	ret = sensor_sample_fetch(dev);
+	if (ret < 0) {
+		printk("sensor_sample_fetch() failed: %d\n", ret);
+		return ret;
+	}
+
+	/* Get sensor data */
+	for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
+		ret = sensor_channel_get(dev, channels[i], &accel[i]);
+		if (ret < 0) {
+			printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+			return ret;
+		}
+	}
+
+	printk("Value of z: %f\n", sensor_value_to_double(&accel[2]));
+	if (sensor_value_to_double(&accel[2]) > 0) {
+		printk("Side: 1\n");
+		return 1;
+	}
+	else {
+		printk("Side: -1\n");
+		return -1;
+	}
 }
 
 static int app_topics_subscribe(void)
@@ -243,9 +279,10 @@ static void shadow_update_work_fn(struct k_work *work)
 }
 
 /* System Workqueue handlers. */
-void button_pressed()
+/* put shadow update work infornt of the kwork queue that sends event to aws */
+void event_trigger()
 {
-	printk("Button pressed %" PRIu32 "\n", k_cycle_get_32());
+	printk("event_trigger\n");
 	/* send shadow_update_work in front of the queue */
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
@@ -284,7 +321,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	}
 
   /* set button pressed as buttons funcion */
-	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+	gpio_init_callback(&button_cb_data, event_trigger, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
@@ -501,6 +538,21 @@ int main(void)
 	 */
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
+	}
+
+	/* create side and new side function to detect change */
+	int side = get_side(sensor);
+	int newSide = get_side(sensor);
+
+	/* while loop that checks if side is changed */
+	while (1) {
+		newSide = get_side(sensor);
+		if (side != 0 && side != newSide) {
+			/* if side is changed, set side to new side, and trigger an event */
+			side = newSide;
+			event_trigger();
+		}
+		k_msleep(2000);
 	}
 
 	return 0;
