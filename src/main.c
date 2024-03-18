@@ -18,7 +18,7 @@
 #include <modem/modem_info.h>
 
 #include "json_payload.h"
-#include "../../asset_tracker_v2/src/ext_sensors/ext_sensors.h"
+#include "../ext_sensors/ext_sensors.h"
 
 /* Register log module */
 LOG_MODULE_REGISTER(aws_iot_sample, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
@@ -352,9 +352,6 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 
 int main(void)
 {
-	double test = 0;
-	double *temp_pointer = &test;
-	int temp_res = ext_sensors_temperature_get(temp_pointer);
 
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
