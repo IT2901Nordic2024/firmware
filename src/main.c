@@ -18,10 +18,23 @@
 #include <modem/modem_info.h>
 
 #include "json_payload.h"
+
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+
+#define SW0_NODE	DT_ALIAS(sw0)
+#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
+#error "Unsupported board: sw0 devicetree alias is not defined"
+#endif
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
+							      {0});
+static struct gpio_callback button_cb_data;
+
 #include "../ext_sensors/ext_sensors.h"
 
 /* Register log module */
-LOG_MODULE_REGISTER(aws_iot_sample, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
+LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 
 /* Macros used to subscribe to specific Zephyr NET management events. */
 #define L4_EVENT_MASK	      (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
@@ -34,6 +47,8 @@ LOG_MODULE_REGISTER(aws_iot_sample, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	LOG_ERR("Fatal error! Rebooting the device.");                                             \
 	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
+
+
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -117,8 +132,6 @@ static int aws_iot_client_init(void)
 	return 0;
 }
 
-/* System Workqueue handlers. */
-
 static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
@@ -163,10 +176,16 @@ static void shadow_update_work_fn(struct k_work *work)
 		FATAL_ERROR();
 		return;
 	}
-
-	(void)k_work_reschedule(&shadow_update_work,
-				K_SECONDS(CONFIG_AWS_IOT_SAMPLE_PUBLICATION_INTERVAL_SECONDS));
 }
+
+/* System Workqueue handlers. */
+void button_pressed()
+{
+	printk("Button pressed %" PRIu32 "\n", k_cycle_get_32());
+	/* send shadow_update_work in front of the queue */
+	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+}
+
 
 static void connect_work_fn(struct k_work *work)
 {
@@ -200,17 +219,20 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 			"from the previous session");
 	}
 
-	/* Mark image as working to avoid reverting to the former image after a reboot. */
-#if defined(CONFIG_BOOTLOADER_MCUBOOT)
-	boot_write_img_confirmed();
-#endif
+  /* set button pressed as buttons funcion */
+	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+	gpio_add_callback(button.port, &button_cb_data);
+	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
-	/* Start sequential updates to AWS IoT. */
-	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+	/* Start sequential updates to AWS IoT */
+	/*(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);*/
 }
 
 static void on_aws_iot_evt_disconnected(void)
 {
+	/* Remove button callback */
+	gpio_remove_callback(button.port, &button_cb_data);
+	printk("Button at %s pin %d has been deactivated\n", button.port->name, button.pin);
 	(void)k_work_cancel_delayable(&shadow_update_work);
 	(void)k_work_reschedule(&connect_work, K_SECONDS(5));
 }
@@ -353,8 +375,32 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 int main(void)
 {
 
+	/* init button, when button is pressed call function button-pressed */
+	int ret;
+
+	if (!gpio_is_ready_dt(&button)) {
+		printk("Error: button device %s is not ready\n",
+		       button.port->name);
+		return 0;
+	}
+
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
+	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	if (ret != 0) {
+		printk("Error %d: failed to configure %s pin %d\n",
+		       ret, button.port->name, button.pin);
+		return 0;
+	}
+
+	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+	if (ret != 0) {
+		printk("Error %d: failed to configure interrupt on %s pin %d\n",
+			ret, button.port->name, button.pin);
+		return 0;
+	}
+
+	/* init the aws connection */
 	int err;
 
 	/* Setup handler for Zephyr NET Connection Manager events. */
@@ -365,9 +411,7 @@ int main(void)
 	net_mgmt_init_event_callback(&conn_cb, connectivity_event_handler, CONN_LAYER_EVENT_MASK);
 	net_mgmt_add_event_callback(&conn_cb);
 
-	/* Connecting to the configured connectivity layer.
-	 * Wi-Fi or LTE depending on the board that the sample was built for.
-	 */
+	/* Connecting to the configured connectivity layer. */
 	LOG_INF("Bringing network interface up and connecting to the network");
 
 	err = conn_mgr_all_if_up(true);

@@ -15,7 +15,15 @@
 	chosen {
 		nordic,modem-trace-uart = &uart1;
 	};
+	
+	/* ... */
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+	/* ... */
+		sw0 = &button0;
+	};
 };
+
 / {
 	aliases {
 		temp-sensor = &bme680;
@@ -42,3 +50,4 @@
 		hpf = <0>;
 	};
 };
+
