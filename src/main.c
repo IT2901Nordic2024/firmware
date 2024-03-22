@@ -18,6 +18,7 @@
 #include <modem/modem_info.h>
 
 #include "json_payload.h"
+
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
@@ -30,19 +31,21 @@ static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
 							      {0});
 static struct gpio_callback button_cb_data;
 
+#include "../ext_sensors/ext_sensors.h"
+
 /* Register log module */
 LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 
 /* Macros used to subscribe to specific Zephyr NET management events. */
-#define L4_EVENT_MASK (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
+#define L4_EVENT_MASK	      (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
 #define CONN_LAYER_EVENT_MASK (NET_EVENT_CONN_IF_FATAL_ERROR)
 
 #define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
 
 /* Macro called upon a fatal error, reboots the device. */
-#define FATAL_ERROR()					\
-	LOG_ERR("Fatal error! Rebooting the device.");	\
-	LOG_PANIC();					\
+#define FATAL_ERROR()                                                                              \
+	LOG_ERR("Fatal error! Rebooting the device.");                                             \
+	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
 
@@ -72,8 +75,7 @@ static int app_topics_subscribe(void)
 		[0].str = custom_topic,
 		[0].len = strlen(custom_topic),
 		[1].str = custom_topic_2,
-		[1].len = strlen(custom_topic_2)
-	};
+		[1].len = strlen(custom_topic_2)};
 
 	err = aws_iot_subscription_topics_add(topics_list, ARRAY_SIZE(topics_list));
 	if (err) {
@@ -88,10 +90,10 @@ static int app_topics_subscribe(void)
 static int aws_iot_client_init(void)
 {
 	int err;
-	struct aws_iot_config config = { 0 };
+	struct aws_iot_config config = {0};
 
 #if defined(CONFIG_AWS_IOT_SAMPLE_DEVICE_ID_USE_HW_ID)
-	char device_id[HW_ID_LEN] = { 0 };
+	char device_id[HW_ID_LEN] = {0};
 
 	/* Get unique hardware ID, can be used as AWS IoT MQTT broker device/client ID. */
 	err = hw_id_get(device_id, ARRAY_SIZE(device_id));
@@ -133,7 +135,7 @@ static int aws_iot_client_init(void)
 static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
-	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
+	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = {0};
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
 		.state.reported.app_version = CONFIG_AWS_IOT_SAMPLE_APP_VERSION,
@@ -146,8 +148,7 @@ static void shadow_update_work_fn(struct k_work *work)
 	if (IS_ENABLED(CONFIG_MODEM_INFO)) {
 		char modem_version_temp[MODEM_FIRMWARE_VERSION_SIZE_MAX];
 
-		err = modem_info_get_fw_version(modem_version_temp,
-						ARRAY_SIZE(modem_version_temp));
+		err = modem_info_get_fw_version(modem_version_temp, ARRAY_SIZE(modem_version_temp));
 		if (err) {
 			LOG_ERR("modem_info_get_fw_version, error: %d", err);
 			FATAL_ERROR();
@@ -307,9 +308,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
 
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
-									 evt->data.msg.ptr,
-									 evt->data.msg.topic.len,
-									 evt->data.msg.topic.str);
+			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
 		break;
 	case AWS_IOT_EVT_PUBACK:
 		LOG_INF("AWS_IOT_EVT_PUBACK, message ID: %d", evt->data.message_id);
@@ -345,8 +344,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 	}
 }
 
-static void l4_event_handler(struct net_mgmt_event_callback *cb,
-			     uint32_t event,
+static void l4_event_handler(struct net_mgmt_event_callback *cb, uint32_t event,
 			     struct net_if *iface)
 {
 	switch (event) {
@@ -364,8 +362,7 @@ static void l4_event_handler(struct net_mgmt_event_callback *cb,
 	}
 }
 
-static void connectivity_event_handler(struct net_mgmt_event_callback *cb,
-				       uint32_t event,
+static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint32_t event,
 				       struct net_if *iface)
 {
 	if (event == NET_EVENT_CONN_IF_FATAL_ERROR) {
@@ -377,6 +374,7 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb,
 
 int main(void)
 {
+
 	/* init button, when button is pressed call function button-pressed */
 	int ret;
 
@@ -385,6 +383,8 @@ int main(void)
 		       button.port->name);
 		return 0;
 	}
+
+	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
 	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
 	if (ret != 0) {
