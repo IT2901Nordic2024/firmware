@@ -16,13 +16,15 @@
 #include <stdlib.h>
 #include <hw_id.h>
 #include <modem/modem_info.h>
-
 #include "json_payload.h"
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/drivers/sensor.h>
 
+/* button */
 #define SW0_NODE	DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
 #error "Unsupported board: sw0 devicetree alias is not defined"
@@ -43,12 +45,36 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 #define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
 
 /* Macro called upon a fatal error, reboots the device. */
-#define FATAL_ERROR()                                                                              \
+#define FATAL_ERROR()                                                                        \
 	LOG_ERR("Fatal error! Rebooting the device.");                                             \
 	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
+/* additional definitions */
 
+/* 
+*based on sensor sample 
+*/
+/* Sensor device */
+static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
+/* Sensor channels */
+static const enum sensor_channel channels[] = {
+	SENSOR_CHAN_ACCEL_X,
+	SENSOR_CHAN_ACCEL_Y,
+	SENSOR_CHAN_ACCEL_Z,
+};
+/* Sensor data */
+struct sensor_value accel[3];
+char accelX[10];
+char accelY[10];
+char accelZ[10];
+/* 
+* based on sensor sample 
+*/
+
+/* Side of the device for sending based on rotation*/
+int side;
+int newSide;
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -64,6 +90,84 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 
 /* Static functions */
+static int fetch_accels(const struct device *dev)
+{
+	/*
+	*	Fetch sensor data from the accelerometer sensor
+	*	saves and prints the sensor data as string to be sent to AWS IoT
+	*/
+	int ret;
+	/*	Check if device is ready, if not return 0	*/
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
+	}
+	else {
+		printk("sensor: device ready.\n");
+	}
+
+	ret = sensor_sample_fetch(dev);
+	if (ret < 0) {
+		printk("sensor_sample_fetch() failed: %d\n", ret);
+		return ret;
+	}
+
+	/* Get sensor data */
+	for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
+		ret = sensor_channel_get(dev, channels[i], &accel[i]);
+		if (ret < 0) {
+			printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+			return ret;
+		}
+	}
+	snprintf(accelX, sizeof(accelX), "%f", sensor_value_to_double(&accel[0]));
+	snprintf(accelY, sizeof(accelY), "%f", sensor_value_to_double(&accel[1]));
+	snprintf(accelZ, sizeof(accelZ), "%f", sensor_value_to_double(&accel[2]));
+	// printf("Value of X: %s\n", accelX);
+	// printf("Value of Y: %s\n", accelY);
+	// printf("Value of Z: %s\n", accelZ);
+	return 0;
+}
+
+static int get_side(const struct device *dev)
+{
+	/*
+	* Fetch sensor data from the accelerometer sensor
+	* and return the side of the device based on the z-axis
+	* 1 for up and -1 for down
+	*/
+	int ret;
+	/*	Check if device is ready, if not return 0	*/
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
+	}
+
+	ret = sensor_sample_fetch(dev);
+	if (ret < 0) {
+		printk("sensor_sample_fetch() failed: %d\n", ret);
+		return ret;
+	}
+
+	/* Get sensor data */
+	for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
+		ret = sensor_channel_get(dev, channels[i], &accel[i]);
+		if (ret < 0) {
+			printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+			return ret;
+		}
+	}
+
+	printk("Value of z: %f\n", sensor_value_to_double(&accel[2]));
+	if (sensor_value_to_double(&accel[2]) > 0) {
+		printk("Side: 1\n");
+		return 1;
+	}
+	else {
+		printk("Side: -1\n");
+		return -1;
+	}
+}
 
 static int app_topics_subscribe(void)
 {
@@ -135,11 +239,23 @@ static int aws_iot_client_init(void)
 static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
-	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = {0};
+	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
+	/* Fetch and send sensor data */
+	fetch_accels(sensor);
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
-		.state.reported.app_version = CONFIG_AWS_IOT_SAMPLE_APP_VERSION,
-	};
+		.state.reported.accelX = accelX,
+		.state.reported.accelY = accelY,
+		.state.reported.accelZ = accelZ,
+	}; 
+
+	err = json_payload_construct(message, sizeof(message), &payload);
+	if (err) {
+			LOG_ERR("json_payload_construct, error: %d", err);
+			FATAL_ERROR();
+			return;
+	}
+
 	struct aws_iot_data tx_data = {
 		.qos = MQTT_QOS_0_AT_MOST_ONCE,
 		.topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
@@ -154,8 +270,6 @@ static void shadow_update_work_fn(struct k_work *work)
 			FATAL_ERROR();
 			return;
 		}
-
-		payload.state.reported.modem_version = modem_version_temp;
 	}
 
 	err = json_payload_construct(message, sizeof(message), &payload);
@@ -179,11 +293,25 @@ static void shadow_update_work_fn(struct k_work *work)
 }
 
 /* System Workqueue handlers. */
-void button_pressed()
+/* put shadow update work infornt of the kwork queue that sends event to aws */
+void event_trigger()
 {
-	printk("Button pressed %" PRIu32 "\n", k_cycle_get_32());
+	printk("event_trigger\n");
 	/* send shadow_update_work in front of the queue */
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+}
+
+/* function with a while loop that checks if side is changed */
+static void check_position(void) {
+   while (true) {
+        newSide = get_side(sensor);
+				/* if side is changed send event trigger */
+        if (side != 0 && side != newSide) {
+            side = newSide;
+            event_trigger();
+        }
+        k_msleep(2000);
+    }
 }
 
 
@@ -220,12 +348,12 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	}
 
   /* set button pressed as buttons funcion */
-	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+	gpio_init_callback(&button_cb_data, event_trigger, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
-	/* Start sequential updates to AWS IoT */
-	/*(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);*/
+	/* Start to check the position */
+	check_position();
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -374,6 +502,8 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 
 int main(void)
 {
+	/* set side and create new side function to detect change */
+	side = get_side(sensor);
 
 	/* init button, when button is pressed call function button-pressed */
 	int ret;
