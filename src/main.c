@@ -45,7 +45,7 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 #define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
 
 /* Macro called upon a fatal error, reboots the device. */
-#define FATAL_ERROR()                                                                              \
+#define FATAL_ERROR()                                                                        \
 	LOG_ERR("Fatal error! Rebooting the device.");                                             \
 	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
@@ -71,6 +71,8 @@ char accelZ[10];
 /* 
 * based on sensor sample 
 */
+
+/* Side of the device for sending based on rotation*/
 int side;
 int newSide;
 
@@ -88,9 +90,6 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 
 /* Static functions */
-/*
-*Based on sensor sample
-*/
 static int fetch_accels(const struct device *dev)
 {
 	/*
@@ -129,11 +128,14 @@ static int fetch_accels(const struct device *dev)
 	// printf("Value of Z: %s\n", accelZ);
 	return 0;
 }
-/*
-*Based on sensor sample
-*/
+
 static int get_side(const struct device *dev)
 {
+	/*
+	* Fetch sensor data from the accelerometer sensor
+	* and return the side of the device based on the z-axis
+	* 1 for up and -1 for down
+	*/
 	int ret;
 	/*	Check if device is ready, if not return 0	*/
 	if (!device_is_ready(dev)) {
@@ -246,8 +248,6 @@ static void shadow_update_work_fn(struct k_work *work)
 		.state.reported.accelY = accelY,
 		.state.reported.accelZ = accelZ,
 	}; 
-
-
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
