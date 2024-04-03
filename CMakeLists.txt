@@ -13,6 +13,7 @@ project(aws_iot)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/json_payload/json_payload.c)
 target_sources(app PRIVATE ext_sensors/ext_sensors.c)
+target_sources(app PRIVATE src/proto/config.pb.cc)
 # NORDIC SDK APP END
 
 zephyr_include_directories(src)

@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+enum Type {
+  ERROR_INVALID = 0;
+  COUNT = 1;
+  TIME = 2;
+}
+
+message Config {
+  int32 timestamp = 1;
+  int32 id = 2;
+  int32 side = 3;
+  Type type = 4;
+}

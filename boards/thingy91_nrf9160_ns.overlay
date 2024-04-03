@@ -14,7 +14,6 @@
 / {
 	chosen {
 		nordic,modem-trace-uart = &uart1;
-		nordic,pm-ext-flash = &mx25r64;
 	};
 	
 	/* ... */
@@ -22,7 +21,6 @@
 	aliases {
 	/* ... */
 		sw0 = &button0;
-		ext-flash = &mx25r64;
 	};
 };
 
@@ -51,8 +49,4 @@
 		bw = <4>;
 		hpf = <0>;
 	};
-};
-
-&mx25r64 {
-	status = "okay";
 };

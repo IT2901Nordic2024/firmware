@@ -23,6 +23,17 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 
+/*Settings and NVS*/
+#include <zephyr/settings/settings.h>
+#include <zephyr/fs/nvs.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
+#include <zephyr/device.h>
+#include <string.h>
+#include <inttypes.h>
+#include <zephyr/sys/printk.h>
+
+
 #define SW0_NODE	DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
 #error "Unsupported board: sw0 devicetree alias is not defined"
@@ -48,7 +59,24 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
+/*Maximum configurable sides on the device*/
+#define MAX_SIDES = 11
 
+/* NVS storage configuration 
+* TODO: Adjust the storage configuration. Figure out NVS_FLASH_DEVICE name.
+*/
+#define NVS_FLASH_DEVICE 	  "storage"
+#define NVS_SECTOR_SIZE       4096   // Adjust the sector size as needed
+#define NVS_SECTOR_COUNT      64     // Adjust the sector count as needed
+#define NVS_STORAGE_OFFSET    0x0000 // Adjust the storage offset as needed
+
+
+static struct nvs_fs fs = {
+    .flash_device = NVS_FLASH_DEVICE,
+    .sector_size = NVS_SECTOR_SIZE,
+    .sector_count = NVS_SECTOR_COUNT,
+    .offset = NVS_STORAGE_OFFSET,
+};
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -370,6 +398,73 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 		FATAL_ERROR();
 		return;
 	}
+}
+
+/* Load and save configuration of side
+* DEPENDS ON SETTINGS AND NVS
+* DEPENDS ON PROTOBUF
+* TODO: Implement protobuf
+*/
+void save_config(const Config *config) {
+    char key[20]; // TODO: Adjust based on key naming
+    struct nvs_fs fs;
+    int ret;
+
+    ret = nvs_read(&fs, sizeof(fs));
+    if (ret) {
+        printk("NVS read error: %d\n", ret);
+        return;
+    }
+
+    for (int i = 0; i < MAX_SIDES; i++) {
+        snprintf(key, sizeof(key), "config/side%d", i);
+        if (settings_delete(NULL, key) != 0) {
+            printk("Failed to delete old config for side %d\n", i);
+        }
+
+        if (i == config->side) {
+            uint8_t buffer[128]; // TODO: Adjust buffer size based on the config size
+            pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+
+            if (!pb_encode(&stream, Config_fields, config)) {
+                printk("Protobuf encoding failed: %s\n", PB_GET_ERROR(&stream));
+                return;
+            }
+
+            ret = settings_save_one(key, buffer, stream.bytes_written);
+            if (ret) {
+                printk("Settings save error: %d\n", ret);
+                return;
+            }
+        }
+    }
+}
+
+void load_config(Config *config) {
+    char key[20]; // TODO: Adjust based on key naming
+    int ret;
+
+    for (int i = 0; i < MAX_SIDES; i++) {
+        snprintf(key, sizeof(key), "config/side%d", i);
+        size_t size = settings_size_read(NULL, key);
+        if (size == 0) {
+            continue;
+        }
+
+        uint8_t buffer[size];
+        ret = settings_load_subtree(NULL, key, buffer, size);
+        if (ret) {
+            printk("Settings load error: %d\n", ret);
+            continue;
+        }
+
+        pb_istream_t stream = pb_istream_from_buffer(buffer, size);
+        if (!pb_decode(&stream, Config_fields, config)) {
+            printk("Protobuf decoding failed: %s\n", PB_GET_ERROR(&stream));
+            continue;
+        }
+        // TODO: Use the config
+    }
 }
 
 int main(void)
