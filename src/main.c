@@ -33,6 +33,11 @@
 #include <inttypes.h>
 #include <zephyr/sys/printk.h>
 
+/*Protobuf*/
+#include <pb_encode.h>
+#include <pb_decode.h>
+#include <proto/config.pb.h>
+
 
 #define SW0_NODE	DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
