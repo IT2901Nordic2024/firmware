@@ -36,7 +36,7 @@
 /*Protobuf*/
 #include <pb_encode.h>
 #include <pb_decode.h>
-#include <proto/config.pb.h>
+#include <src/config.pb.h>
 
 
 #define SW0_NODE	DT_ALIAS(sw0)
@@ -70,10 +70,11 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 /* NVS storage configuration 
 * TODO: Adjust the storage configuration. Figure out NVS_FLASH_DEVICE name.
 */
-#define NVS_FLASH_DEVICE 	  "storage"
-#define NVS_SECTOR_SIZE       4096   // Adjust the sector size as needed
-#define NVS_SECTOR_COUNT      64     // Adjust the sector count as needed
-#define NVS_STORAGE_OFFSET    0x0000 // Adjust the storage offset as needed
+#define NVS_PARTITION		  storage_partition
+#define NVS_FLASH_DEVICE 	  FIXED_PARTITION_DEVICE(NVS_PARTITION)
+#define NVS_SECTOR_SIZE       4096   
+#define NVS_SECTOR_COUNT      64     
+#define NVS_STORAGE_OFFSET    0x0000 
 
 
 static struct nvs_fs fs = {
