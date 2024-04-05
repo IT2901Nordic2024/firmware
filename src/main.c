@@ -18,6 +18,8 @@
 #include <modem/modem_info.h>
 #include "json_payload.h"
 
+#include <math.h>
+
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
@@ -25,12 +27,11 @@
 #include <zephyr/drivers/sensor.h>
 
 /* button */
-#define SW0_NODE	DT_ALIAS(sw0)
+#define SW0_NODE DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
 #error "Unsupported board: sw0 devicetree alias is not defined"
 #endif
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
-							      {0});
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
 static struct gpio_callback button_cb_data;
 
 #include "../ext_sensors/ext_sensors.h"
@@ -45,16 +46,16 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 #define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
 
 /* Macro called upon a fatal error, reboots the device. */
-#define FATAL_ERROR()                                                                        \
+#define FATAL_ERROR()                                                                              \
 	LOG_ERR("Fatal error! Rebooting the device.");                                             \
 	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
 /* additional definitions */
 
-/* 
-*based on sensor sample 
-*/
+/*
+ *based on sensor sample
+ */
 /* Sensor device */
 static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
 /* Sensor channels */
@@ -68,9 +69,9 @@ struct sensor_value accel[3];
 char accelX[10];
 char accelY[10];
 char accelZ[10];
-/* 
-* based on sensor sample 
-*/
+/*
+ * based on sensor sample
+ */
 
 /* Side of the device for sending based on rotation*/
 int side;
@@ -93,16 +94,15 @@ static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 static int fetch_accels(const struct device *dev)
 {
 	/*
-	*	Fetch sensor data from the accelerometer sensor
-	*	saves and prints the sensor data as string to be sent to AWS IoT
-	*/
+	 *	Fetch sensor data from the accelerometer sensor
+	 *	saves and prints the sensor data as string to be sent to AWS IoT
+	 */
 	int ret;
 	/*	Check if device is ready, if not return 0	*/
 	if (!device_is_ready(dev)) {
 		printk("sensor: device not ready.\n");
 		return 0;
-	}
-	else {
+	} else {
 		printk("sensor: device ready.\n");
 	}
 
@@ -129,44 +129,131 @@ static int fetch_accels(const struct device *dev)
 	return 0;
 }
 
+void calculate_angles(double accelX, double accelY, double accelZ)
+{
+	double roll = atan2(accelY, accelZ);
+	printk("roll value: %f\n", roll);
+}
+
+double Xaccel[5] = {};
+double Yaccel[5] = {};
+double Zaccel[5] = {};
+
+int compare(const void *a, const void *b)
+{
+	double *double_a = (double *)a;
+	double *double_b = (double *)b;
+	// Compare the doubles
+	if (&a < &b) {
+		return -1; // Return a negative value if a should appear before b
+	} else if (&a > &b) {
+		return 1; // Return a positive value if a should appear after b
+	} else {
+		return 0; // Return 0 if a and b are equal
+	}
+}
+
+// Function to calculate median
+double calculate_median(double accel[], int array_size)
+{
+	/*Sort list of values*/
+	qsort(accel, array_size, sizeof(int), compare);
+
+	/*Check if array size even or odd to know whitch median teqnique to use */
+	if (array_size % 2 == 0) {
+		return (accel[array_size / 2 - 1] + accel[array_size / 2]) / 2.0;
+	} else {
+		return accel[array_size / 2];
+	}
+}
+
+void sampling_filter(int number_samples, const struct device *dev, int32_t ms)
+{
+	int ret;
+
+	int count = 0;
+
+	while (count < number_samples) {
+		ret = sensor_sample_fetch(dev);
+		if (ret < 0) {
+			printk("sensor_sample_fetch() failed: %d\n", ret);
+			return ret;
+		}
+		for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
+			ret = sensor_channel_get(dev, channels[i], &accel[i]);
+			if (ret < 0) {
+				printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+				//return ret;
+			}
+		}
+
+		Xaccel[count] = sensor_value_to_double(&accel[0]);
+		Yaccel[count] = sensor_value_to_double(&accel[1]);
+		Zaccel[count] = sensor_value_to_double(&accel[2]);
+
+		printk("(%12.6f, %12.6f, %12.6f)\n", sensor_value_to_double(&accel[0]),
+		       sensor_value_to_double(&accel[1]), sensor_value_to_double(&accel[2]));
+		count++;
+		k_msleep(ms);
+	}
+	printk("Last row: (%12.6f, %12.6f, %12.6f)\n", Xaccel[4], Yaccel[4], Zaccel[4]);
+
+	double medianX = calculate_median(Xaccel, number_samples);
+	printk("Median: %f, size: %i \n", medianX, number_samples);
+}
 static int get_side(const struct device *dev)
 {
 	/*
-	* Fetch sensor data from the accelerometer sensor
-	* and return the side of the device based on the z-axis
-	* 1 for up and -1 for down
-	*/
+	 * Fetch sensor data from the accelerometer sensor
+	 * and return the side of the device based on the z-axis
+	 * 1 for up and -1 for down
+	 */
 	int ret;
 	/*	Check if device is ready, if not return 0	*/
 	if (!device_is_ready(dev)) {
 		printk("sensor: device not ready.\n");
 		return 0;
 	}
-
-	ret = sensor_sample_fetch(dev);
-	if (ret < 0) {
-		printk("sensor_sample_fetch() failed: %d\n", ret);
-		return ret;
-	}
-
-	/* Get sensor data */
-	for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
-		ret = sensor_channel_get(dev, channels[i], &accel[i]);
+	sampling_filter(5, dev, 100);
+	int count = 0;
+	/* Get sensor data */ /*
+	while (count < 30) {
+		ret = sensor_sample_fetch(dev);
 		if (ret < 0) {
-			printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+			printk("sensor_sample_fetch() failed: %d\n", ret);
 			return ret;
 		}
-	}
+		for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
+			ret = sensor_channel_get(dev, channels[i], &accel[i]);
+			if (ret < 0) {
+				printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+				return ret;
+			}
+		}
 
-	printk("Value of z: %f\n", sensor_value_to_double(&accel[2]));
-	if (sensor_value_to_double(&accel[2]) > 0) {
-		printk("Side: 1\n");
-		return 1;
+		printk("(%12.6f, %12.6f, %12.6f)\n", sensor_value_to_double(&accel[0]),
+		       sensor_value_to_double(&accel[1]), sensor_value_to_double(&accel[2]));
+		count++;
+		k_msleep(5);
 	}
-	else {
-		printk("Side: -1\n");
-		return -1;
-	}
+*/
+			      // for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
+			      // 	ret = sensor_channel_get(dev, channels[i], &accel[i]);
+			      // 	if (ret < 0) {
+			      // 		printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+			      // 		return ret;
+			      // 	}
+			      // }
+
+	/*calculate_angles(sensor_value_to_double(&accel[0]), sensor_value_to_double(&accel[1]),
+			 sensor_value_to_double(&accel[2]));*/
+	// if (sensor_value_to_double(&accel[2]) > 0) {
+	// 	printk("Side: -1\n");
+	// 	return -1;
+	// } else {
+	// 	printk("Side: 1\n");
+	// 	return 1;
+	// }
 }
 
 static int app_topics_subscribe(void)
@@ -239,7 +326,7 @@ static int aws_iot_client_init(void)
 static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
-	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
+	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = {0};
 	/* Fetch and send sensor data */
 	fetch_accels(sensor);
 	struct payload payload = {
@@ -247,13 +334,13 @@ static void shadow_update_work_fn(struct k_work *work)
 		.state.reported.accelX = accelX,
 		.state.reported.accelY = accelY,
 		.state.reported.accelZ = accelZ,
-	}; 
+	};
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
-			LOG_ERR("json_payload_construct, error: %d", err);
-			FATAL_ERROR();
-			return;
+		LOG_ERR("json_payload_construct, error: %d", err);
+		FATAL_ERROR();
+		return;
 	}
 
 	struct aws_iot_data tx_data = {
@@ -302,19 +389,18 @@ void event_trigger()
 }
 
 /* function with a while loop that checks if side is changed */
-static void check_position(void) {
-   while (true) {
-        newSide = get_side(sensor);
-				/* if side is changed send event trigger */
-        if (side != 0 && side != newSide) {
-            side = newSide;
-            event_trigger();
-        }
-        k_msleep(2000);
-    }
+static void check_position(void)
+{
+	while (true) {
+		newSide = get_side(sensor);
+		/* if side is changed send event trigger */
+		if (side != 0 && side != newSide) {
+			side = newSide;
+			// event_trigger();
+		}
+		k_msleep(10000);
+	}
 }
-
-
 static void connect_work_fn(struct k_work *work)
 {
 	int err;
@@ -347,7 +433,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 			"from the previous session");
 	}
 
-  /* set button pressed as buttons funcion */
+	/* set button pressed as buttons funcion */
 	gpio_init_callback(&button_cb_data, event_trigger, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
@@ -509,8 +595,7 @@ int main(void)
 	int ret;
 
 	if (!gpio_is_ready_dt(&button)) {
-		printk("Error: button device %s is not ready\n",
-		       button.port->name);
+		printk("Error: button device %s is not ready\n", button.port->name);
 		return 0;
 	}
 
@@ -518,15 +603,15 @@ int main(void)
 
 	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
 	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, button.port->name, button.pin);
+		printk("Error %d: failed to configure %s pin %d\n", ret, button.port->name,
+		       button.pin);
 		return 0;
 	}
 
 	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
 	if (ret != 0) {
-		printk("Error %d: failed to configure interrupt on %s pin %d\n",
-			ret, button.port->name, button.pin);
+		printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
+		       button.port->name, button.pin);
 		return 0;
 	}
 
