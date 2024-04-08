@@ -23,6 +23,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/drivers/sensor.h>
+#include "ext_sensors.h"
 
 /* button */
 #define SW0_NODE	DT_ALIAS(sw0)
@@ -53,7 +54,7 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 /* additional definitions */
 
 /* 
-*based on sensor sample 
+* Sensor variables
 */
 /* Sensor device */
 static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
@@ -69,10 +70,14 @@ char accelX[10];
 char accelY[10];
 char accelZ[10];
 /* 
-* based on sensor sample 
+* Sensor variables
 */
 
-/* Side of the device for sending based on rotation*/
+/* counter variables */
+int counter = 0;
+/* counter variables */
+
+/* Side of the device for sending based on rotation */
 int side;
 int newSide;
 
@@ -241,13 +246,13 @@ static void shadow_update_work_fn(struct k_work *work)
 	int err;
 	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
 	/* Fetch and send sensor data */
-	fetch_accels(sensor);
+	/* fetch_accels(sensor); */
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
-		.state.reported.accelX = accelX,
-		.state.reported.accelY = accelY,
-		.state.reported.accelZ = accelZ,
+		.state.reported.count = counter,
 	}; 
+
+	counter = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
@@ -353,7 +358,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
 	/* Start to check the position */
-	check_position();
+	// check_position();
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -500,13 +505,37 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 	}
 }
 
-int main(void)
+void my_sensor_handler(const struct ext_sensor_evt *const evt)
 {
+    switch (evt->type) {
+        case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
+            printf("Impact detected: %6.2f g\n", evt->value);
+            // Handle impact event, evt->value contains the impact in g's
+						(void)k_work_cancel_delayable(&shadow_update_work);
+						counter ++;
+						(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
+            break;
+        
+        // Handle other events...
+        default:
+            break;
+    }
+}
+
+int main(void)
+{	
 	/* set side and create new side function to detect change */
-	side = get_side(sensor);
+	// side = get_side(sensor);
 
 	/* init button, when button is pressed call function button-pressed */
 	int ret;
+
+	// Initialize external sensors with a handler function.
+	ret = ext_sensors_init(my_sensor_handler);
+	if (ret) {
+			printf("Error initializing sensors: %d\n", ret);
+			return ret;
+	}
 
 	if (!gpio_is_ready_dt(&button)) {
 		printk("Error: button device %s is not ready\n",
