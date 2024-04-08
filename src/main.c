@@ -324,6 +324,36 @@ static void on_net_event_l4_disconnected(void)
 	(void)k_work_cancel_delayable(&shadow_update_work);
 }
 
+void save_config(const char *encoded_message, size_t message_length) {
+	// Decode the configuration from the protobuf
+	Config config = Config_init_zero;
+	pb_istream_t stream = pb_istream_from_buffer((const pb_byte_t *)encoded_message, message_length);
+	bool status = pb_decode(&stream, Config_fields, &config);
+	if (!status) {
+		// Handle decoding error 
+		return;
+	}
+	// Print the decoded int32 id
+	LOG_INF("Received configuration with id: %d", config.id);
+	// Print the decoded int32 timestamp
+	LOG_INF("Received configuration with timestamp: %d", config.timestamp);
+
+	// Save the configuration to NVS using Settings API
+	// int err;
+	// char key[20]; // Assuming a maximum length for the key
+	// snprintf(key, sizeof(key), "side%d_config", config.side);
+
+	// // Write configuration to NVS
+	// err = settings_save_one(key, &config, sizeof(config));
+	// if (err >= 0) {
+	// 	// Configuration saved successfully
+	// 	printk("Configuration for side %d saved successfully\n", config.id);
+	// } else {
+	// 	// Error occurred while saving configuration
+	// 	printk("Error saving configuration for side %d: %d\n", config.id, err);
+	// }
+
+}
 /* Event handlers */
 
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
@@ -345,7 +375,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_DATA_RECEIVED:
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
-
+		save_config(evt->data.msg.topic.str);
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
 		break;
@@ -418,54 +448,35 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 */
 
 // Receive protobuf from mqtt topic and call save_config
-void receive_config() {
-	// On receiving a message from the MQTT topic
-	// Call save_config with the received message
 
-}
 
-void save_config(struct Config *config) {
-    // Serialize the config to bytes
-    uint8_t buffer[CONFIG_APP_CONFIG_SIZE];  // Adjust size as needed
-	// Decode the configuration from the protobuf
-	Config config = Config_init_zero;
-	size_t message_length = MAX_CONFIG_SIZE;
-	pb_istream_t stream = pb_istream_from_buffer(buffer, message_length);
-	bool status = pb_decode(&stream, Config_fields, &config);
-	if (!status) {
-		// Handle decoding error
-		return;
-	}
-	// Print the decoded message
-	printk("Decoded message: %s\n", config.id);
-}
 
-void load_config() {
-    int err;
-    uint8_t config_buf[MAX_CONFIG_SIZE]; // Assuming a maximum size for the configuration buffer
-    size_t config_size;
+// void load_config() {
+//     int err;
+//     uint8_t config_buf[MAX_CONFIG_SIZE]; // Assuming a maximum size for the configuration buffer
+//     size_t config_size;
 
-    // Iterate over each side and load its configuration
-    for (int side = 0; side < MAX_SIDES; side++) {
-        char key[20]; // Assuming a maximum length for the key
-        snprintf(key, sizeof(key), "side%d_config", side);
+//     // Iterate over each side and load its configuration
+//     for (int side = 0; side < MAX_SIDES; side++) {
+//         char key[20]; // Assuming a maximum length for the key
+//         snprintf(key, sizeof(key), "side%d_config", side);
 
-        // Read configuration from NVS
-        err = settings_load_subtree(key, config_buf, sizeof(config_buf));
-        if (err >= 0) {
-            config_size = err;
-            // Configuration found, process it (e.g., deserialize from protobuf)
-            // Example: process_config(side, config_buf, config_size);
-            printk("Configuration for side %d loaded successfully\n", side);
-        } else if (err == -ENOENT) {
-            // Configuration not found for this side
-            printk("No configuration found for side %d\n", side);
-        } else {
-            // Error occurred while reading configuration
-            printk("Error reading configuration for side %d: %d\n", side, err);
-        }
-    }
-}
+//         // Read configuration from NVS
+//         err = settings_load_subtree(key, config_buf, sizeof(config_buf));
+//         if (err >= 0) {
+//             config_size = err;
+//             // Configuration found, process it (e.g., deserialize from protobuf)
+//             // Example: process_config(side, config_buf, config_size);
+//             printk("Configuration for side %d loaded successfully\n", side);
+//         } else if (err == -ENOENT) {
+//             // Configuration not found for this side
+//             printk("No configuration found for side %d\n", side);
+//         } else {
+//             // Error occurred while reading configuration
+//             printk("Error reading configuration for side %d: %d\n", side, err);
+//         }
+//     }
+// }
 
 
 
@@ -534,6 +545,10 @@ int main(void)
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
 	}
+
+	const char encoded_message[] = "\x08\xb9`\x10\x02\x18\x03 \x01";
+	size_t message_length = sizeof(encoded_message) - 1; // Exclude the null terminator
+	save_config(encoded_message, message_length);
 
 	return 0;
 }

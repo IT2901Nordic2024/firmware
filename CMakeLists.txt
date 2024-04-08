@@ -13,7 +13,6 @@ project(aws_iot)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/json_payload/json_payload.c)
 target_sources(app PRIVATE ext_sensors/ext_sensors.c)
-# target_sources(app PRIVATE src/proto/config.pb.cc) 
 # Add generated nanopb files
 # NORDIC SDK APP END
 
@@ -24,8 +23,6 @@ zephyr_include_directories(ext_sensors)
 
 # Include generated nanopb files
 zephyr_include_directories(${Protobuf_INCLUDE_DIRS})
-list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
-include(nanopb)
 nanopb_generate_cpp(proto_sources proto_headers RELPATH . src/config.proto)
 
 # Include generated header files
