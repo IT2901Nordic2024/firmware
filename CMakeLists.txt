@@ -24,6 +24,8 @@ zephyr_include_directories(ext_sensors)
 
 # Include generated nanopb files
 zephyr_include_directories(${Protobuf_INCLUDE_DIRS})
+list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
+include(nanopb)
 nanopb_generate_cpp(proto_sources proto_headers RELPATH . src/config.proto)
 
 # Include generated header files

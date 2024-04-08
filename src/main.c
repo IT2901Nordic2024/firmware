@@ -34,6 +34,8 @@
 #include <zephyr/sys/printk.h>
 
 /*Protobuf*/
+#include <pb.h>
+#include <pb_common.h>
 #include <pb_encode.h>
 #include <pb_decode.h>
 #include <src/config.pb.h>
@@ -77,6 +79,8 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 #define NVS_STORAGE_OFFSET    0x0000 
 #define NVS_PARTITION_OFFSET	FIXED_PARTITION_OFFSET(NVS_PARTITION)
 
+#define MAX_CONFIG_SIZE 1024
+#define CONFIG_APP_CONFIG_SIZE 1024
 
 // static struct nvs_fs fs = {
 //     .flash_device = NVS_FLASH_DEVICE,
@@ -412,120 +416,54 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 * DEPENDS ON PROTOBUF
 * TODO: Implement protobuf
 */
-void save_config(const Config *config) {
-    struct nvs_fs fs;
-    int ret;
-    uint16_t id;
-	struct flash_pages_info info;
 
-    fs.flash_device = NVS_FLASH_DEVICE;
-    if (!device_is_ready(fs.flash_device)) {
-        printk("Flash device %s is not ready\n", fs.flash_device->name);
-        return;
-    }
-    fs.offset = NVS_PARTITION_OFFSET;
-    ret = flash_get_page_info_by_offs(fs.flash_device, fs.offset, &info);
-    if (ret) {
-        printk("Unable to get page info\n");
-        return;
-    }
-    fs.sector_size = info.size;
-    fs.sector_count = 3U;
+// Receive protobuf from mqtt topic and call save_config
+void receive_config() {
+	// On receiving a message from the MQTT topic
+	// Call save_config with the received message
 
-    ret = nvs_mount(&fs);
-    if (ret) {
-        printk("Flash Init failed\n");
-        return;
-    }
-
-    for (int i = 0; i < MAX_SIDES; i++) {
-        char key[20];
-        snprintf(key, sizeof(key), "config/side%d", i);
-
-        // Find the ID corresponding to the key
-        ret = nvs_find(&fs, key, &id);
-        if (ret == -ENOENT) {
-            continue; // Entry doesn't exist, move to next side
-        } else if (ret < 0) {
-            printk("Error finding NVS entry ID for key %s: %d\n", key, ret);
-            return;
-        }
-
-        // Delete the old NVS entry
-        ret = nvs_delete(&fs, id);
-        if (ret < 0 && ret != -ENOENT) {
-            printk("Failed to delete old config for side %d: %d\n", i, ret);
-            continue;
-        }
-
-        if (i == config->side) {
-            uint8_t buffer[128]; // Adjust buffer size based on the config size
-            pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-
-            if (!pb_encode(&stream, Config_fields, config)) {
-                printk("Protobuf encoding failed: %s\n", PB_GET_ERROR(&stream));
-                return;
-            }
-
-            ret = nvs_write(&fs, id, buffer, stream.bytes_written);
-            if (ret) {
-                printk("NVS write error: %d\n", ret);
-                return;
-            }
-        }
-    }
 }
 
-void load_config(Config *config) {
-    struct nvs_fs fs;
-    int ret;
-    uint16_t id;
-	struct flash_pages_info info;
+void save_config(struct Config *config) {
+    // Serialize the config to bytes
+    uint8_t buffer[CONFIG_APP_CONFIG_SIZE];  // Adjust size as needed
+	// Decode the configuration from the protobuf
+	Config config = Config_init_zero;
+	size_t message_length = MAX_CONFIG_SIZE;
+	pb_istream_t stream = pb_istream_from_buffer(buffer, message_length);
+	bool status = pb_decode(&stream, Config_fields, &config);
+	if (!status) {
+		// Handle decoding error
+		return;
+	}
+	// Print the decoded message
+	printk("Decoded message: %s\n", config.id);
+}
 
-    fs.flash_device = NVS_FLASH_DEVICE;
-    if (!device_is_ready(fs.flash_device)) {
-        printk("Flash device %s is not ready\n", fs.flash_device->name);
-        return;
-    }
-    fs.offset = NVS_PARTITION_OFFSET;
-    ret = flash_get_page_info_by_offs(fs.flash_device, fs.offset, &info);
-    if (ret) {
-        printk("Unable to get page info\n");
-        return;
-    }
-    fs.sector_size = info.size;
-    fs.sector_count = 3U;
+void load_config() {
+    int err;
+    uint8_t config_buf[MAX_CONFIG_SIZE]; // Assuming a maximum size for the configuration buffer
+    size_t config_size;
 
-    ret = nvs_mount(&fs);
-    if (ret) {
-        printk("Flash Init failed\n");
-        return;
-    }
+    // Iterate over each side and load its configuration
+    for (int side = 0; side < MAX_SIDES; side++) {
+        char key[20]; // Assuming a maximum length for the key
+        snprintf(key, sizeof(key), "side%d_config", side);
 
-    for (int i = 0; i < MAX_SIDES; i++) {
-        char key[20];
-        snprintf(key, sizeof(key), "config/side%d", i);
-
-        // Find the ID corresponding to the key
-        ret = nvs_find(&fs, key, &id);
-        if (ret == -ENOENT) {
-            continue; // Entry doesn't exist, move to next side
-        } else if (ret < 0) {
-            printk("Error finding NVS entry ID for key %s: %d\n", key, ret);
-            return;
+        // Read configuration from NVS
+        err = settings_load_subtree(key, config_buf, sizeof(config_buf));
+        if (err >= 0) {
+            config_size = err;
+            // Configuration found, process it (e.g., deserialize from protobuf)
+            // Example: process_config(side, config_buf, config_size);
+            printk("Configuration for side %d loaded successfully\n", side);
+        } else if (err == -ENOENT) {
+            // Configuration not found for this side
+            printk("No configuration found for side %d\n", side);
+        } else {
+            // Error occurred while reading configuration
+            printk("Error reading configuration for side %d: %d\n", side, err);
         }
-
-        size_t size = sizeof(Config); // Assuming fixed size for config
-        ret = nvs_read(&fs, id, config, size);
-        if (ret) {
-            if (ret == -ENOENT) {
-                continue; // Entry doesn't exist, move to next side
-            } else {
-                printk("NVS read error: %d\n", ret);
-                return;
-            }
-        }
-        // Use the config
     }
 }
 
