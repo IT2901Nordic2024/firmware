@@ -135,18 +135,18 @@ void calculate_angles(double accelX, double accelY, double accelZ)
 	printk("roll value: %f\n", roll);
 }
 
-double Xaccel[5] = {};
-double Yaccel[5] = {};
-double Zaccel[5] = {};
+double Xaccel[50] = {};
+double Yaccel[50] = {};
+double Zaccel[50] = {};
 
 int compare(const void *a, const void *b)
 {
 	double *double_a = (double *)a;
 	double *double_b = (double *)b;
 	// Compare the doubles
-	if (&a < &b) {
+	if (&double_a < &double_b) {
 		return -1; // Return a negative value if a should appear before b
-	} else if (&a > &b) {
+	} else if (&double_a > &double_b) {
 		return 1; // Return a positive value if a should appear after b
 	} else {
 		return 0; // Return 0 if a and b are equal
@@ -166,40 +166,52 @@ double calculate_median(double accel[], int array_size)
 		return accel[array_size / 2];
 	}
 }
-
-void sampling_filter(int number_samples, const struct device *dev, int32_t ms)
+double medianX;
+double medianY;
+double medianZ;
+void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
 {
 	int ret;
 
 	int count = 0;
 
-	while (count < number_samples) {
+	while (count < number_of_samples) {
 		ret = sensor_sample_fetch(dev);
 		if (ret < 0) {
 			printk("sensor_sample_fetch() failed: %d\n", ret);
-			return ret;
+			// return ret;
 		}
 		for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
 			ret = sensor_channel_get(dev, channels[i], &accel[i]);
 			if (ret < 0) {
 				printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
-				//return ret;
+				// return ret;
 			}
 		}
+		double G = sqrt(pow(sensor_value_to_double(&accel[0]), 2) +
+				pow(sensor_value_to_double(&accel[1]), 2) +
+				pow(sensor_value_to_double(&accel[2]), 2));
+		Xaccel[count] = sensor_value_to_double(&accel[0]) / G;
+		Yaccel[count] = sensor_value_to_double(&accel[1]) / G;
+		Zaccel[count] = sensor_value_to_double(&accel[2]) / G;
 
-		Xaccel[count] = sensor_value_to_double(&accel[0]);
-		Yaccel[count] = sensor_value_to_double(&accel[1]);
-		Zaccel[count] = sensor_value_to_double(&accel[2]);
-
-		printk("(%12.6f, %12.6f, %12.6f)\n", sensor_value_to_double(&accel[0]),
+		/*printk("(%12.6f, %12.6f, %12.6f)\n", sensor_value_to_double(&accel[0]),
 		       sensor_value_to_double(&accel[1]), sensor_value_to_double(&accel[2]));
+		*/
 		count++;
 		k_msleep(ms);
 	}
-	printk("Last row: (%12.6f, %12.6f, %12.6f)\n", Xaccel[4], Yaccel[4], Zaccel[4]);
 
-	double medianX = calculate_median(Xaccel, number_samples);
-	printk("Median: %f, size: %i \n", medianX, number_samples);
+	medianX = calculate_median(Xaccel, number_of_samples);
+	medianY = calculate_median(Yaccel, number_of_samples);
+	medianZ = calculate_median(Zaccel, number_of_samples);
+
+	printk("Median X: %f \n", medianX);
+	printk("Median Y: %f \n", medianY);
+	printk("Median Z: %f \n", medianZ);
+
+	double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
+	printk("Sqr: %f \n", squaresum);
 }
 static int get_side(const struct device *dev)
 {
@@ -214,8 +226,14 @@ static int get_side(const struct device *dev)
 		printk("sensor: device not ready.\n");
 		return 0;
 	}
-	sampling_filter(5, dev, 100);
+	sampling_filter(50, dev, 100);
 	int count = 0;
+
+	double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
+
+	double pitch = asin2(medianX / squaresum);
+
+	double roll = atan2(medianY, medianZ);
 	/* Get sensor data */ /*
 	while (count < 30) {
 		ret = sensor_sample_fetch(dev);
