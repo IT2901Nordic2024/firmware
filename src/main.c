@@ -69,13 +69,16 @@ struct sensor_value accel[3];
 char accelX[10];
 char accelY[10];
 char accelZ[10];
-/* 
-* Sensor variables
-*/
 
 /* counter variables */
 int counter = 0;
-/* counter variables */
+
+/* LED */
+#define LED_PORT	DT_ALIAS_LED0_GPIOS_CONTROLLER
+#define LED		DT_ALIAS_LED0_GPIOS_PIN
+struct device *dev;
+dev = device_get_binding(LED_PORT);
+gpio_pin_configure(dev, LED, GPIO_DIR_OUT);
 
 /* Side of the device for sending based on rotation */
 int side;
@@ -505,21 +508,22 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 	}
 }
 
-void my_sensor_handler(const struct ext_sensor_evt *const evt)
+void impact_handler(const struct ext_sensor_evt *const evt)
 {
-    switch (evt->type) {
-        case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
-            printf("Impact detected: %6.2f g\n", evt->value);
-            // Handle impact event, evt->value contains the impact in g's
-						(void)k_work_cancel_delayable(&shadow_update_work);
-						counter ++;
-						(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
-            break;
-        
-        // Handle other events...
-        default:
-            break;
-    }
+	switch (evt->type) {
+			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
+					printf("Impact detected: %6.2f g\n", evt->value);
+					// Handle impact event, evt->value contains the impact in g's
+					(void)k_work_cancel_delayable(&shadow_update_work);
+					counter ++;
+					gpio_pin_write(dev, LED, 1);
+					(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
+					break;
+			
+			// Handle other events...
+			default:
+					break;
+	}
 }
 
 int main(void)
@@ -531,7 +535,7 @@ int main(void)
 	int ret;
 
 	// Initialize external sensors with a handler function.
-	ret = ext_sensors_init(my_sensor_handler);
+	ret = ext_sensors_init(impact_handler);
 	if (ret) {
 			printf("Error initializing sensors: %d\n", ret);
 			return ret;
