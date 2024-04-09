@@ -375,11 +375,11 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
-		save_config(evt->data.msg.topic.str, sizeof(evt->data.msg.topic.str));
 		on_aws_iot_evt_disconnected();
 		break;
 	case AWS_IOT_EVT_DATA_RECEIVED:
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
+		//save_config(evt->data.msg.topic.str, sizeof(evt->data.msg.topic.str));
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
 		break;
@@ -548,11 +548,11 @@ int main(void)
 	 */
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
-	}
+	}	
 
-	const char encoded_message[] = "\x08\xb9`\x10\x02\x18\x03 \x01";
-	size_t message_length = sizeof(encoded_message) - 1; // Exclude the null terminator
-	save_config(encoded_message, message_length);
+	// const char encoded_message[] = "\x08\xb9`\x10\x02\x18\x03 \x01";
+	// size_t message_length = sizeof(encoded_message) - 1; // Exclude the null terminator
+	// save_config(encoded_message, message_length);
 
 	return 0;
 }
