@@ -337,6 +337,10 @@ void save_config(const char *encoded_message, size_t message_length) {
 	LOG_INF("Received configuration with id: %d", config.id);
 	// Print the decoded int32 timestamp
 	LOG_INF("Received configuration with timestamp: %d", config.timestamp);
+	// Print the decoded string type
+	LOG_INF("Received configuration with type: %d", config.type);
+	// Print the decoded side
+	LOG_INF("Received configuration with side: %d", config.side);
 
 	// Save the configuration to NVS using Settings API
 	// int err;
@@ -371,11 +375,11 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
+		save_config(evt->data.msg.topic.str, sizeof(evt->data.msg.topic.str));
 		on_aws_iot_evt_disconnected();
 		break;
 	case AWS_IOT_EVT_DATA_RECEIVED:
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
-		//save_config(evt->data.msg.topic.str);
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
 		break;
