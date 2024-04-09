@@ -375,7 +375,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_DATA_RECEIVED:
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
-		save_config(evt->data.msg.topic.str);
+		//save_config(evt->data.msg.topic.str);
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
 		break;
