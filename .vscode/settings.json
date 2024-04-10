@@ -2,5 +2,12 @@
   "iis.configDir": "",
   "nrf-connect.toolchain.path": "${nrf-connect.toolchain:2.5.1}",
   "esbonio.sphinx.confDir": "",
-  "nrf-connect.applications": ["${workspaceFolder}"]
+  "nrf-connect.applications": ["${workspaceFolder}"],
+  "files.associations": {
+    "settings.h": "c",
+    "nvs.h": "c",
+    "flash.h": "c",
+    "log.h": "c",
+    "settings_nvs.h": "c"
+  }
 }

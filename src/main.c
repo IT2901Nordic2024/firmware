@@ -25,6 +25,7 @@
 
 /*Settings and NVS*/
 #include <zephyr/settings/settings.h>
+#include "settings_nvs.h"
 #include <zephyr/fs/nvs.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
@@ -82,12 +83,12 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 #define MAX_CONFIG_SIZE 1024
 #define CONFIG_APP_CONFIG_SIZE 1024
 
-// static struct nvs_fs fs = {
-//     .flash_device = NVS_FLASH_DEVICE,
-//     .sector_size = NVS_SECTOR_SIZE,
-//     .sector_count = NVS_SECTOR_COUNT,
-//     .offset = NVS_STORAGE_OFFSET,
-// };
+static struct nvs_fs fs = {
+    .flash_device = NVS_FLASH_DEVICE,
+    .sector_size = NVS_SECTOR_SIZE,
+    .sector_count = NVS_SECTOR_COUNT,
+    .offset = NVS_STORAGE_OFFSET,
+};
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -342,21 +343,19 @@ void save_config(const char *encoded_message, size_t message_length) {
 	// Print the decoded side
 	LOG_INF("Received configuration with side: %d", config.side);
 
-	// Save the configuration to NVS using Settings API
-	// int err;
-	// char key[20]; // Assuming a maximum length for the key
+	// Save the configuration to NVS
+	int err;
+	char key[20]; // Assuming a maximum length for the key
 	// snprintf(key, sizeof(key), "side%d_config", config.side);
-
-	// // Write configuration to NVS
-	// err = settings_save_one(key, &config, sizeof(config));
-	// if (err >= 0) {
-	// 	// Configuration saved successfully
-	// 	printk("Configuration for side %d saved successfully\n", config.id);
-	// } else {
-	// 	// Error occurred while saving configuration
-	// 	printk("Error saving configuration for side %d: %d\n", config.id, err);
-	// }
-
+	// Save to NVS using Settings
+	err = settings_save_one(key, &config, sizeof(config));
+	if (err) {
+		// Handle error
+		return;
+	}
+	// Print success message
+	LOG_INF("Configuration for side %d saved successfully", config.side);
+	
 }
 /* Event handlers */
 
@@ -445,51 +444,33 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 	}
 }
 
-/* Load and save configuration of side
-* DEPENDS ON SETTINGS AND NVS
-* DEPENDS ON PROTOBUF
-* TODO: Implement protobuf
-*/
-
-// Receive protobuf from mqtt topic and call save_config
-
-
-
-// void load_config() {
-//     int err;
-//     uint8_t config_buf[MAX_CONFIG_SIZE]; // Assuming a maximum size for the configuration buffer
-//     size_t config_size;
-
-//     // Iterate over each side and load its configuration
-//     for (int side = 0; side < MAX_SIDES; side++) {
-//         char key[20]; // Assuming a maximum length for the key
-//         snprintf(key, sizeof(key), "side%d_config", side);
-
-//         // Read configuration from NVS
-//         err = settings_load_subtree(key, config_buf, sizeof(config_buf));
-//         if (err >= 0) {
-//             config_size = err;
-//             // Configuration found, process it (e.g., deserialize from protobuf)
-//             // Example: process_config(side, config_buf, config_size);
-//             printk("Configuration for side %d loaded successfully\n", side);
-//         } else if (err == -ENOENT) {
-//             // Configuration not found for this side
-//             printk("No configuration found for side %d\n", side);
-//         } else {
-//             // Error occurred while reading configuration
-//             printk("Error reading configuration for side %d: %d\n", side, err);
-//         }
-//     }
-// }
-
-
 
 int main(void)
 {
-
-	/* init button, when button is pressed call function button-pressed */
+	settings_subsys_init();
+	
 	int ret;
+	ret = nvs_mount(&fs);
+	if (ret > 0) {
+		printk("Error %d: Failed to initialize NVS filesystem\n", ret);
+    	return 0;
+	}
+	int err;
+	/* Register NVS storage backend for loading data */
+	
+	err = settings_nvs_src(&fs);
+	if (err) {
+		printk("Error %d: Failed to register NVS storage backend for loading data\n", err);
+		return 0;
+	}
 
+	/* Register NVS storage backend for saving data */
+	err = settings_nvs_dst(&fs);
+	if (err) {
+		printk("Error %d: Failed to register NVS storage backend for saving data\n", err);
+		return 0;
+	}
+	
 	if (!gpio_is_ready_dt(&button)) {
 		printk("Error: button device %s is not ready\n",
 		       button.port->name);
@@ -498,6 +479,7 @@ int main(void)
 
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
+	/* init button, when button is pressed call function button-pressed */
 	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
 	if (ret != 0) {
 		printk("Error %d: failed to configure %s pin %d\n",
@@ -526,6 +508,28 @@ int main(void)
 	/* Connecting to the configured connectivity layer. */
 	LOG_INF("Bringing network interface up and connecting to the network");
 
+	settings_load();
+	// Print all loaded side configs
+	for (int i = 0; i < MAX_SIDES; i++) {
+		char key[20];
+		snprintf(key, sizeof(key), "side%d_config", i);
+		Config config;
+		size_t len = sizeof(config);
+		int err = nvs_read(&fs, key, &config, &len);
+		if (err) {
+			// Handle error
+			continue;
+		}
+		// Print the decoded int32 id
+		LOG_INF("Loaded configuration with id: %d", config.id);
+		// Print the decoded int32 timestamp
+		LOG_INF("Loaded configuration with timestamp: %d", config.timestamp);
+		// Print the decoded string type
+		LOG_INF("Loaded configuration with type: %d", config.type);
+		// Print the decoded side
+		LOG_INF("Loaded configuration with side: %d", config.side);
+	}
+
 	err = conn_mgr_all_if_up(true);
 	if (err) {
 		LOG_ERR("conn_mgr_all_if_up, error: %d", err);
@@ -550,9 +554,9 @@ int main(void)
 		conn_mgr_mon_resend_status();
 	}	
 
-	// const char encoded_message[] = "\x08\xb9`\x10\x02\x18\x03 \x01";
-	// size_t message_length = sizeof(encoded_message) - 1; // Exclude the null terminator
-	// save_config(encoded_message, message_length);
+	const char encoded_message[] = "\x08\xb9`\x10\x02\x18\x03 \x01";
+	size_t message_length = sizeof(encoded_message) - 1; // Exclude the null terminator
+	save_config(encoded_message, message_length);
 
 	return 0;
 }
