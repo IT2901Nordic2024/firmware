@@ -25,7 +25,6 @@
 
 /*Settings and NVS*/
 #include <zephyr/settings/settings.h>
-#include "settings_nvs.h"
 #include <zephyr/fs/nvs.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
@@ -40,7 +39,6 @@
 #include <pb_encode.h>
 #include <pb_decode.h>
 #include <src/config.pb.h>
-
 
 #define SW0_NODE	DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
@@ -88,6 +86,38 @@ static struct nvs_fs fs = {
     .sector_size = NVS_SECTOR_SIZE,
     .sector_count = NVS_SECTOR_COUNT,
     .offset = NVS_STORAGE_OFFSET,
+};
+
+// SETTINGS SUBSYSTEM
+#define DEFAULT_TYPE_VALUE 0
+
+static uint8_t side_0_type = DEFAULT_TYPE_VALUE;
+
+static int type_settings_set(const char *name, size_t len,
+                             settings_read_cb read_cb, void *cb_arg)
+{
+    const char *next;
+    int rc;
+
+    if (settings_name_steq(name, "type", &next) && !next) {
+        if (len != sizeof(side_0_type)) {
+            return -EINVAL;
+        }
+
+        rc = read_cb(cb_arg, &side_0_type, sizeof(side_0_type));
+        if (rc >= 0) {
+            return 0;
+        }
+
+        return rc;
+    }
+
+    return -ENOENT;
+}
+
+struct settings_handler side_0_conf = {
+    .name = "side_0",
+    .h_set = type_settings_set
 };
 
 /* Zephyr NET management event callback structures. */
@@ -445,118 +475,133 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 }
 
 
+// int main(void)
+// {
+// 	settings_subsys_init();
+	
+// 	int ret;
+// 	ret = nvs_mount(&fs);
+// 	if (ret > 0) {
+// 		printk("Error %d: Failed to initialize NVS filesystem\n", ret);
+//     	return 0;
+// 	}
+// 	int err;
+// 	/* Register NVS storage backend for loading data */
+	
+// 	err = settings_nvs_src(&fs);
+// 	if (err) {
+// 		printk("Error %d: Failed to register NVS storage backend for loading data\n", err);
+// 		return 0;
+// 	}
+
+// 	/* Register NVS storage backend for saving data */
+// 	err = settings_nvs_dst(&fs);
+// 	if (err) {
+// 		printk("Error %d: Failed to register NVS storage backend for saving data\n", err);
+// 		return 0;
+// 	}
+
+	
+	
+// 	if (!gpio_is_ready_dt(&button)) {
+// 		printk("Error: button device %s is not ready\n",
+// 		       button.port->name);
+// 		return 0;
+// 	}
+
+// 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
+
+// 	/* init button, when button is pressed call function button-pressed */
+// 	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+// 	if (ret != 0) {
+// 		printk("Error %d: failed to configure %s pin %d\n",
+// 		       ret, button.port->name, button.pin);
+// 		return 0;
+// 	}
+
+// 	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+// 	if (ret != 0) {
+// 		printk("Error %d: failed to configure interrupt on %s pin %d\n",
+// 			ret, button.port->name, button.pin);
+// 		return 0;
+// 	}
+
+// 	/* init the aws connection */
+// 	int err;
+
+// 	/* Setup handler for Zephyr NET Connection Manager events. */
+// 	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
+// 	net_mgmt_add_event_callback(&l4_cb);
+
+// 	/* Setup handler for Zephyr NET Connection Manager Connectivity layer. */
+// 	net_mgmt_init_event_callback(&conn_cb, connectivity_event_handler, CONN_LAYER_EVENT_MASK);
+// 	net_mgmt_add_event_callback(&conn_cb);
+
+// 	/* Connecting to the configured connectivity layer. */
+// 	LOG_INF("Bringing network interface up and connecting to the network");
+
+// 	settings_load();
+// 	// Print all loaded side configs
+// 	for (int i = 0; i < MAX_SIDES; i++) {
+// 		char key[20];
+// 		snprintf(key, sizeof(key), "side%d_config", i);
+// 		Config config;
+// 		size_t len = sizeof(config);
+// 		int err = nvs_read(&fs, key, &config, &len);
+// 		if (err) {
+// 			// Handle error
+// 			continue;
+// 		}
+// 		// Print the decoded int32 id
+// 		LOG_INF("Loaded configuration with id: %d", config.id);
+// 		// Print the decoded int32 timestamp
+// 		LOG_INF("Loaded configuration with timestamp: %d", config.timestamp);
+// 		// Print the decoded string type
+// 		LOG_INF("Loaded configuration with type: %d", config.type);
+// 		// Print the decoded side
+// 		LOG_INF("Loaded configuration with side: %d", config.side);
+// 	}
+
+// 	err = conn_mgr_all_if_up(true);
+// 	if (err) {
+// 		LOG_ERR("conn_mgr_all_if_up, error: %d", err);
+// 		FATAL_ERROR();
+// 		return err;
+// 	}
+
+// 	err = aws_iot_client_init();
+// 	if (err) {
+// 		LOG_ERR("aws_iot_client_init, error: %d", err);
+// 		FATAL_ERROR();
+// 		return err;
+// 	}
+
+// 	/* Resend connection status if the sample is built for QEMU x86.
+// 	 * This is necessary because the network interface is automatically brought up
+// 	 * at SYS_INIT() before main() is called.
+// 	 * This means that NET_EVENT_L4_CONNECTED fires before the
+// 	 * appropriate handler l4_event_handler() is registered.
+// 	 */
+// 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
+// 		conn_mgr_mon_resend_status();
+// 	}	
+
+// 	const char encoded_message[] = "\x08\xb9`\x10\x02\x18\x03 \x01";
+// 	size_t message_length = sizeof(encoded_message) - 1; // Exclude the null terminator
+// 	save_config(encoded_message, message_length);
+
+// 	return 0;
+// }
+
 int main(void)
 {
-	settings_subsys_init();
-	
-	int ret;
-	ret = nvs_mount(&fs);
-	if (ret > 0) {
-		printk("Error %d: Failed to initialize NVS filesystem\n", ret);
-    	return 0;
-	}
-	int err;
-	/* Register NVS storage backend for loading data */
-	
-	err = settings_nvs_src(&fs);
-	if (err) {
-		printk("Error %d: Failed to register NVS storage backend for loading data\n", err);
-		return 0;
-	}
-
-	/* Register NVS storage backend for saving data */
-	err = settings_nvs_dst(&fs);
-	if (err) {
-		printk("Error %d: Failed to register NVS storage backend for saving data\n", err);
-		return 0;
-	}
-	
-	if (!gpio_is_ready_dt(&button)) {
-		printk("Error: button device %s is not ready\n",
-		       button.port->name);
-		return 0;
-	}
-
-	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
-
-	/* init button, when button is pressed call function button-pressed */
-	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, button.port->name, button.pin);
-		return 0;
-	}
-
-	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
-	if (ret != 0) {
-		printk("Error %d: failed to configure interrupt on %s pin %d\n",
-			ret, button.port->name, button.pin);
-		return 0;
-	}
-
-	/* init the aws connection */
-	int err;
-
-	/* Setup handler for Zephyr NET Connection Manager events. */
-	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
-	net_mgmt_add_event_callback(&l4_cb);
-
-	/* Setup handler for Zephyr NET Connection Manager Connectivity layer. */
-	net_mgmt_init_event_callback(&conn_cb, connectivity_event_handler, CONN_LAYER_EVENT_MASK);
-	net_mgmt_add_event_callback(&conn_cb);
-
-	/* Connecting to the configured connectivity layer. */
-	LOG_INF("Bringing network interface up and connecting to the network");
-
-	settings_load();
-	// Print all loaded side configs
-	for (int i = 0; i < MAX_SIDES; i++) {
-		char key[20];
-		snprintf(key, sizeof(key), "side%d_config", i);
-		Config config;
-		size_t len = sizeof(config);
-		int err = nvs_read(&fs, key, &config, &len);
-		if (err) {
-			// Handle error
-			continue;
-		}
-		// Print the decoded int32 id
-		LOG_INF("Loaded configuration with id: %d", config.id);
-		// Print the decoded int32 timestamp
-		LOG_INF("Loaded configuration with timestamp: %d", config.timestamp);
-		// Print the decoded string type
-		LOG_INF("Loaded configuration with type: %d", config.type);
-		// Print the decoded side
-		LOG_INF("Loaded configuration with side: %d", config.side);
-	}
-
-	err = conn_mgr_all_if_up(true);
-	if (err) {
-		LOG_ERR("conn_mgr_all_if_up, error: %d", err);
-		FATAL_ERROR();
-		return err;
-	}
-
-	err = aws_iot_client_init();
-	if (err) {
-		LOG_ERR("aws_iot_client_init, error: %d", err);
-		FATAL_ERROR();
-		return err;
-	}
-
-	/* Resend connection status if the sample is built for QEMU x86.
-	 * This is necessary because the network interface is automatically brought up
-	 * at SYS_INIT() before main() is called.
-	 * This means that NET_EVENT_L4_CONNECTED fires before the
-	 * appropriate handler l4_event_handler() is registered.
-	 */
-	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
-		conn_mgr_mon_resend_status();
-	}	
-
-	const char encoded_message[] = "\x08\xb9`\x10\x02\x18\x03 \x01";
-	size_t message_length = sizeof(encoded_message) - 1; // Exclude the null terminator
-	save_config(encoded_message, message_length);
-
-	return 0;
+    settings_subsys_init();
+    settings_register(&side_0_conf);
+    settings_load();
+	printk("Loaded side_0/type: %" PRIu8 "\n", side_0_type);
+	side_0_type = side_0_type + 1;
+	settings_save_one("side_0/type", &side_0_type, sizeof(side_0_type));
+	printk("Saved side_0/type: %" PRIu8 "\n", side_0_type);
+	k_msleep(1000);
+	sys_reboot(SYS_REBOOT_COLD);
 }

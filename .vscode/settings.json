@@ -8,6 +8,9 @@
     "nvs.h": "c",
     "flash.h": "c",
     "log.h": "c",
-    "settings_nvs.h": "c"
+    "settings_nvs.h": "c",
+    "settings_priv.h": "c",
+    "flash_map.h": "c",
+    "config.pb.h": "c"
   }
 }
