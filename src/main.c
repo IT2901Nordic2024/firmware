@@ -74,11 +74,9 @@ char accelZ[10];
 int counter = 0;
 
 /* LED */
-#define LED_PORT	DT_ALIAS_LED0_GPIOS_CONTROLLER
-#define LED		DT_ALIAS_LED0_GPIOS_PIN
-struct device *dev;
-dev = device_get_binding(LED_PORT);
-gpio_pin_configure(dev, LED, GPIO_DIR_OUT);
+#define LED0_NODE DT_ALIAS(led0)
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+static struct k_work_delayable led_off_work;
 
 /* Side of the device for sending based on rotation */
 int side;
@@ -98,6 +96,11 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 
 /* Static functions */
+static void turn_led_off(struct k_work *work)
+{
+    gpio_pin_set_dt(&led, 0); // Assuming "0" turns the LED off.
+}
+
 static int fetch_accels(const struct device *dev)
 {
 	/*
@@ -516,10 +519,10 @@ void impact_handler(const struct ext_sensor_evt *const evt)
 					// Handle impact event, evt->value contains the impact in g's
 					(void)k_work_cancel_delayable(&shadow_update_work);
 					counter ++;
-					gpio_pin_write(dev, LED, 1);
+					gpio_pin_set_dt(&led, 1);
+					k_work_schedule(&led_off_work, K_SECONDS(0.2));
 					(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
-					break;
-			
+					
 			// Handle other events...
 			default:
 					break;
@@ -528,12 +531,19 @@ void impact_handler(const struct ext_sensor_evt *const evt)
 
 int main(void)
 {	
+	int ret;
+	if (!gpio_is_ready_dt(&led)) {
+		return 0;
+	}
+	ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
+	if (ret < 0) {
+		return 0;
+	}
+	k_work_init_delayable(&led_off_work, turn_led_off);
 	/* set side and create new side function to detect change */
 	// side = get_side(sensor);
 
 	/* init button, when button is pressed call function button-pressed */
-	int ret;
-
 	// Initialize external sensors with a handler function.
 	ret = ext_sensors_init(impact_handler);
 	if (ret) {
