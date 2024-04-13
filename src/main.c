@@ -252,12 +252,13 @@ static void shadow_update_work_fn(struct k_work *work)
 	int err;
 	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
 	/* Fetch and send sensor data */
-	/* fetch_accels(sensor); */
+	// fetch_accels(sensor);
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
 		.state.reported.count = counter,
 	}; 
 
+	//set counter to 0
 	counter = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
@@ -516,7 +517,7 @@ void impact_handler(const struct ext_sensor_evt *const evt)
 	switch (evt->type) {
 			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
 					printf("Impact detected: %6.2f g\n", evt->value);
-					// Handle impact event, evt->value contains the impact in g's
+					// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
 					(void)k_work_cancel_delayable(&shadow_update_work);
 					counter ++;
 					gpio_pin_set_dt(&led, 1);
@@ -531,7 +532,11 @@ void impact_handler(const struct ext_sensor_evt *const evt)
 
 int main(void)
 {	
+	/* set side and create new side function to detect change */
+	// side = get_side(sensor);
+
 	int ret;
+	// initialize led -> maby move to function
 	if (!gpio_is_ready_dt(&led)) {
 		return 0;
 	}
@@ -540,29 +545,19 @@ int main(void)
 		return 0;
 	}
 	k_work_init_delayable(&led_off_work, turn_led_off);
-	/* set side and create new side function to detect change */
-	// side = get_side(sensor);
 
 	/* init button, when button is pressed call function button-pressed */
-	// Initialize external sensors with a handler function.
+	// Initialize impact sensor with a handler function.
 	ret = ext_sensors_init(impact_handler);
 	if (ret) {
 			printf("Error initializing sensors: %d\n", ret);
 			return ret;
 	}
 
+	// inititilize button with interruption event
 	if (!gpio_is_ready_dt(&button)) {
 		printk("Error: button device %s is not ready\n",
 		       button.port->name);
-		return 0;
-	}
-
-	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
-
-	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, button.port->name, button.pin);
 		return 0;
 	}
 
@@ -573,8 +568,17 @@ int main(void)
 		return 0;
 	}
 
-	/* init the aws connection */
 	int err;
+
+	// start the aws iot sample
+	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
+
+	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	if (ret != 0) {
+		printk("Error %d: failed to configure %s pin %d\n",
+		       ret, button.port->name, button.pin);
+		return 0;
+	}
 
 	/* Setup handler for Zephyr NET Connection Manager events. */
 	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
