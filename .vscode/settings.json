@@ -11,6 +11,10 @@
     "settings_nvs.h": "c",
     "settings_priv.h": "c",
     "flash_map.h": "c",
-    "config.pb.h": "c"
+    "config.pb.h": "c",
+    "kernel.h": "c",
+    "pb_common.h": "c",
+    "printk.h": "c",
+    "device.h": "c"
   }
 }

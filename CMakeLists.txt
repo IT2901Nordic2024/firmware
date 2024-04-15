@@ -13,12 +13,14 @@ project(aws_iot)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/json_payload/json_payload.c)
 target_sources(app PRIVATE ext_sensors/ext_sensors.c)
+target_sources(app PRIVATE src/settings_defs/settings_defs.c)
 # Add generated nanopb files
 # NORDIC SDK APP END
 
 zephyr_include_directories(src)
 zephyr_include_directories(src/json_payload)
 zephyr_include_directories(ext_sensors)
+zephyr_include_directories(src/settings_defs)
 # zephyr_include_directories(src/proto)
 
 # Include generated nanopb files

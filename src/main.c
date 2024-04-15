@@ -18,6 +18,7 @@
 #include <modem/modem_info.h>
 
 #include "json_payload.h"
+#include "settings_defs.h"
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -88,77 +89,13 @@ static struct nvs_fs fs = {
     .offset = NVS_STORAGE_OFFSET,
 };
 
-// SETTINGS SUBSYSTEM
-#define DEFAULT_TYPE_VALUE 0
-
-struct settings_data {
-    int32_t timestamp;
-    int32_t id;
-    int32_t type;
-};
-
-static struct settings_data side_0_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-
-static int config_settings_set(const char *name, size_t len,
-                                settings_read_cb read_cb, void *cb_arg)
-{
-    const char *next;
-    int rc;
-
-    // Check if the settings name matches and no extra characters after "type"
-    if (settings_name_steq(name, "type", &next) && !next) {
-        // Check the length
-        if (len != sizeof(side_0_settings.type)) {
-            return -EINVAL;
-        }
-
-        // Read the type
-        rc = read_cb(cb_arg, &side_0_settings.type, sizeof(side_0_settings.type));
-        if (rc >= 0) {
-            return 0;
-        }
-        return rc;
-    }
-    else if (settings_name_steq(name, "timestamp", &next) && !next) {
-        // Check the length
-        if (len != sizeof(side_0_settings.timestamp)) {
-            return -EINVAL;
-        }
-
-        // Read the timestamp
-        rc = read_cb(cb_arg, &side_0_settings.timestamp, sizeof(side_0_settings.timestamp));
-        if (rc >= 0) {
-            return 0;
-        }
-        return rc;
-    }
-    else if (settings_name_steq(name, "id", &next) && !next) {
-        // Check the length
-        if (len != sizeof(side_0_settings.id)) {
-            return -EINVAL;
-        }
-
-        // Read the id
-        rc = read_cb(cb_arg, &side_0_settings.id, sizeof(side_0_settings.id));
-        if (rc >= 0) {
-            return 0;
-        }
-        return rc;
-    }
-
-    return -ENOENT;
-}
-
-struct settings_handler side_0_conf = {
-    .name = "side_0",
-    .h_set = config_settings_set
-};
-
 
 int main(void)
 {
     settings_subsys_init();
-    settings_register(&side_0_conf);
+    for (int i = 0; i < MAX_SIDES; i++) {
+		settings_register(side_confs[i]);
+	}
     settings_load();
     
     // Print loaded settings
@@ -176,6 +113,8 @@ int main(void)
     
     // Print saved settings
     printk("Saved side_0/type: %" PRIi32 "\n", side_0_settings.type);
+
+	printk("Current timestamp side 0, timestamp: %" PRIi32 "\n", side_settings[0]->timestamp);
     
     // Wait for 1000 milliseconds and reboot
     k_msleep(1000);
