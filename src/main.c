@@ -71,7 +71,7 @@ char accelY[10];
 char accelZ[10];
 
 /* counter variables */
-int counter = 0;
+int occurrence_count = 0;
 
 /* LED */
 #define LED0_NODE DT_ALIAS(led0)
@@ -255,11 +255,11 @@ static void shadow_update_work_fn(struct k_work *work)
 	// fetch_accels(sensor);
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
-		.state.reported.count = counter,
+		.state.reported.count = occurrence_count,
 	}; 
 
 	//set counter to 0
-	counter = 0;
+	occurrence_count = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
@@ -518,7 +518,7 @@ static void impact_handler(const struct ext_sensor_evt *const evt)
 					printf("Impact detected: %6.2f g\n", evt->value);
 					// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
 					(void)k_work_cancel_delayable(&shadow_update_work);
-					counter ++;
+					occurrence_count ++;
 					gpio_pin_set_dt(&led, 1);
 					k_work_schedule(&led_off_work, K_SECONDS(0.2));
 					(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
