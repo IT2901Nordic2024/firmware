@@ -99,25 +99,52 @@ int main(void)
     settings_load();
     
     // Print loaded settings
-    printk("Loaded side_0/timestamp: %" PRIi32 "\n", side_0_settings.timestamp);
-    printk("Loaded side_0/id: %" PRIi32 "\n", side_0_settings.id);
-    printk("Loaded side_0/type: %" PRIi32 "\n", side_0_settings.type);
-    
-    // Increment type by 1 and save settings
-	side_0_settings.id = side_0_settings.id + 1242;
-	settings_save_one("side_0/id", &side_0_settings.id, sizeof(side_0_settings.id));
-	side_0_settings.timestamp = side_0_settings.timestamp + 1000;
-	settings_save_one("side_0/timestamp", &side_0_settings.timestamp, sizeof(side_0_settings.timestamp));
-    side_0_settings.type = side_0_settings.type + 1;
-    settings_save_one("side_0/type", &side_0_settings.type, sizeof(side_0_settings.type));
-    
-    // Print saved settings
-    printk("Saved side_0/type: %" PRIi32 "\n", side_0_settings.type);
+    for (int i = 0; i < MAX_SIDES; i++) {
+		printk("Loaded side_%d/timestamp: %" PRIi32 "\n", i, side_settings[i]->timestamp);
+		printk("Loaded side_%d/id: %" PRIi32 "\n", i, side_settings[i]->id);
+		printk("Loaded side_%d/type: %" PRIi32 "\n", i, side_settings[i]->type);
+	}
 
-	printk("Current timestamp side 0, timestamp: %" PRIi32 "\n", side_settings[0]->timestamp);
+    
+	for (int i = 0; i < MAX_SIDES; i++) {
+		struct settings_data *side = side_settings[i];
+		side_settings[i]->timestamp = side->timestamp + 1000;
+		side_settings[i]->id = side->id + 123;
+		side_settings[i]->type = side->type + 1;
+		
+		char name[20];
+		sprintf(name, "side_%d/timestamp", i);
+
+		int ret = settings_save_one(name, &side->timestamp, sizeof(side->timestamp));
+		if (ret) {
+			printk("Error saving side_%d/timestamp: %d\n", i, ret);
+		} else {
+			printk("Saved side_%d/timestamp: %" PRIi32 "\n", i, side->timestamp);
+		}
+
+		sprintf(name, "side_%d/id", i);
+		ret = settings_save_one(name, &side->id, sizeof(side->id));
+
+		if (ret) {
+			printk("Error saving side_%d/id: %d\n", i, ret);
+		} else {
+			printk("Saved side_%d/id: %" PRIi32 "\n", i, side->id);
+		}
+
+		sprintf(name, "side_%d/type", i);
+		ret = settings_save_one(name, &side->type, sizeof(side->type));
+		if (ret) {
+			printk("Error saving side_%d/type: %d\n", i, ret);
+		} else {
+			printk("Saved side_%d/type: %" PRIi32 "\n", i, side->type);
+		}
+	}
+		
+
+    
     
     // Wait for 1000 milliseconds and reboot
-    k_msleep(1000);
+    k_msleep(5000);
     sys_reboot(SYS_REBOOT_COLD);
     
     return 0;
