@@ -23,6 +23,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/drivers/sensor.h>
+#include "ext_sensors.h"
 
 /* button */
 #define SW0_NODE	DT_ALIAS(sw0)
@@ -53,7 +54,7 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 /* additional definitions */
 
 /* 
-*based on sensor sample 
+* Sensor variables
 */
 /* Sensor device */
 static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
@@ -68,11 +69,16 @@ struct sensor_value accel[3];
 char accelX[10];
 char accelY[10];
 char accelZ[10];
-/* 
-* based on sensor sample 
-*/
 
-/* Side of the device for sending based on rotation*/
+/* counter variables */
+int occurrence_count = 0;
+
+/* LED */
+#define LED0_NODE DT_ALIAS(led0)
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+static struct k_work_delayable led_off_work;
+
+/* Side of the device for sending based on rotation */
 int side;
 int newSide;
 
@@ -90,6 +96,11 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 
 /* Static functions */
+static void turn_led_off(struct k_work *work)
+{
+    gpio_pin_set_dt(&led, 0); // Assuming "0" turns the LED off.
+}
+
 static int fetch_accels(const struct device *dev)
 {
 	/*
@@ -241,13 +252,14 @@ static void shadow_update_work_fn(struct k_work *work)
 	int err;
 	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
 	/* Fetch and send sensor data */
-	fetch_accels(sensor);
+	// fetch_accels(sensor);
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
-		.state.reported.accelX = accelX,
-		.state.reported.accelY = accelY,
-		.state.reported.accelZ = accelZ,
+		.state.reported.count = occurrence_count,
 	}; 
+
+	//set counter to 0
+	occurrence_count = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
@@ -294,7 +306,7 @@ static void shadow_update_work_fn(struct k_work *work)
 
 /* System Workqueue handlers. */
 /* put shadow update work infornt of the kwork queue that sends event to aws */
-void event_trigger()
+static void event_trigger()
 {
 	printk("event_trigger\n");
 	/* send shadow_update_work in front of the queue */
@@ -313,7 +325,6 @@ static void check_position(void) {
         k_msleep(2000);
     }
 }
-
 
 static void connect_work_fn(struct k_work *work)
 {
@@ -353,7 +364,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
 	/* Start to check the position */
-	check_position();
+	// check_position();
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -500,26 +511,54 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 	}
 }
 
-int main(void)
+static void impact_handler(const struct ext_sensor_evt *const evt)
 {
-	/* set side and create new side function to detect change */
-	side = get_side(sensor);
+	switch (evt->type) {
+			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
+					printf("Impact detected: %6.2f g\n", evt->value);
+					// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
+					(void)k_work_cancel_delayable(&shadow_update_work);
+					occurrence_count ++;
+					gpio_pin_set_dt(&led, 1);
+					k_work_schedule(&led_off_work, K_SECONDS(0.2));
+					(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
+					
+			// Handle other events...
+			default:
+					break;
+	}
+}
 
-	/* init button, when button is pressed call function button-pressed */
+static int init_led()
+{
 	int ret;
+	// initialize led
+	if (!gpio_is_ready_dt(&led)) {
+		return 0;
+	}
+	ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
+	if (ret < 0) {
+		return 0;
+	}
+	k_work_init_delayable(&led_off_work, turn_led_off);
+	return ret;
+}
 
+static int init_button()
+{
+	int ret;
+	/* init button, when button is pressed call function button-pressed */
+	// Initialize impact sensor with a handler function.
+	ret = ext_sensors_init(impact_handler);
+	if (ret) {
+			printf("Error initializing sensors: %d\n", ret);
+			return ret;
+	}
+
+	// inititilize button with interruption event
 	if (!gpio_is_ready_dt(&button)) {
 		printk("Error: button device %s is not ready\n",
 		       button.port->name);
-		return 0;
-	}
-
-	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
-
-	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, button.port->name, button.pin);
 		return 0;
 	}
 
@@ -529,9 +568,31 @@ int main(void)
 			ret, button.port->name, button.pin);
 		return 0;
 	}
+	return ret;
+}
 
-	/* init the aws connection */
+int main(void)
+{	
+	/* set side and create new side function to detect change */
+	// side = get_side(sensor);
+
+	int ret;
+	// initialize led function
+	ret = init_led();
+	// initialize button function
+	ret = init_button();
+
 	int err;
+
+	// start the aws iot sample
+	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
+
+	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	if (ret != 0) {
+		printk("Error %d: failed to configure %s pin %d\n",
+		       ret, button.port->name, button.pin);
+		return 0;
+	}
 
 	/* Setup handler for Zephyr NET Connection Manager events. */
 	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);

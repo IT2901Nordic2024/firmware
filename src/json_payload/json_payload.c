@@ -19,12 +19,8 @@ int json_payload_construct(char *message, size_t size, struct payload *payload)
 	const struct json_obj_descr parameters[] = {
 		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "uptime",
 					  state.reported.uptime, JSON_TOK_NUMBER),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "accelX",
-					  state.reported.accelX, JSON_TOK_STRING),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "accelY",
-					  state.reported.accelY, JSON_TOK_STRING),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "accelZ",
-					  state.reported.accelZ, JSON_TOK_STRING),
+		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "count",
+					  state.reported.count, JSON_TOK_NUMBER),
 	};
 	const struct json_obj_descr reported[] = {
 		JSON_OBJ_DESCR_OBJECT_NAMED(struct payload, "reported", state.reported,
