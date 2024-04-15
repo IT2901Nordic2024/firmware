@@ -306,7 +306,7 @@ static void shadow_update_work_fn(struct k_work *work)
 
 /* System Workqueue handlers. */
 /* put shadow update work infornt of the kwork queue that sends event to aws */
-void event_trigger()
+static void event_trigger()
 {
 	printk("event_trigger\n");
 	/* send shadow_update_work in front of the queue */
@@ -325,7 +325,6 @@ static void check_position(void) {
         k_msleep(2000);
     }
 }
-
 
 static void connect_work_fn(struct k_work *work)
 {
@@ -512,7 +511,7 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 	}
 }
 
-void impact_handler(const struct ext_sensor_evt *const evt)
+static void impact_handler(const struct ext_sensor_evt *const evt)
 {
 	switch (evt->type) {
 			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
@@ -530,13 +529,10 @@ void impact_handler(const struct ext_sensor_evt *const evt)
 	}
 }
 
-int main(void)
-{	
-	/* set side and create new side function to detect change */
-	// side = get_side(sensor);
-
+static int init_led()
+{
 	int ret;
-	// initialize led -> maby move to function
+	// initialize led
 	if (!gpio_is_ready_dt(&led)) {
 		return 0;
 	}
@@ -545,7 +541,12 @@ int main(void)
 		return 0;
 	}
 	k_work_init_delayable(&led_off_work, turn_led_off);
+	return ret;
+}
 
+static int init_button()
+{
+	int ret;
 	/* init button, when button is pressed call function button-pressed */
 	// Initialize impact sensor with a handler function.
 	ret = ext_sensors_init(impact_handler);
@@ -567,6 +568,19 @@ int main(void)
 			ret, button.port->name, button.pin);
 		return 0;
 	}
+	return ret;
+}
+
+int main(void)
+{	
+	/* set side and create new side function to detect change */
+	// side = get_side(sensor);
+
+	int ret;
+	// initialize led function
+	ret = init_led();
+	// initialize button function
+	ret = init_button();
 
 	int err;
 
