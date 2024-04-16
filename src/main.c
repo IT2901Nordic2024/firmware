@@ -31,8 +31,8 @@
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
 #error "Unsupported board: sw0 devicetree alias is not defined"
 #endif
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
-static struct gpio_callback button_cb_data;
+/*static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
+static struct gpio_callback button_cb_data;*/
 
 #include "../ext_sensors/ext_sensors.h"
 
@@ -76,6 +76,8 @@ char accelZ[10];
 /* Side of the device for sending based on rotation*/
 int side;
 int newSide;
+double pitch;
+double roll;
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -135,9 +137,36 @@ void calculate_angles(double accelX, double accelY, double accelZ)
 	printk("roll value: %f\n", roll);
 }
 
-double Xaccel[50] = {};
-double Yaccel[50] = {};
-double Zaccel[50] = {};
+double Xaccel[10] = {};
+double Yaccel[10] = {};
+double Zaccel[10] = {};
+
+double medianX;
+double medianY;
+double medianZ;
+
+/*Config for each side*/
+// struct to represent the range values for each side
+
+struct range_values {
+	double min;
+	double max;
+};
+
+struct each_side {
+	struct range_values accelX;
+	struct range_values accelY;
+	struct range_values accelZ;
+};
+
+struct each_side sides[6] = {
+	{{-4.405, 4.405}, {-4.405, 4.405}, {-14.215, -5.405}}, // side 1
+	{{-4.405, 4.405}, {5.405, 14.215}, {-4.405, 4.405}},   // side 2
+	{{-14.215, -5.405}, {-4.405, 4.405}, {-4.405, 4.405}}, // side 3
+	{{9.81, 14.215}, {-4.405, 4.405}, {-4.405, 4.405}},    // side 4
+	{{-4.405, 4.405}, {-14.215, -5.405}, {-4.405, 4.405}}, // side 5
+	{{-4.405, 4.405}, {-4.405, 4.405}, {5.405, 14.215}},   // side 6
+};
 
 int compare(const void *a, const void *b)
 {
@@ -166,9 +195,22 @@ double calculate_median(double accel[], int array_size)
 		return accel[array_size / 2];
 	}
 }
-double medianX;
-double medianY;
-double medianZ;
+
+int find_what_side(struct each_side sides[], int number_of_sides)
+{
+
+	for (size_t i = 0; i < number_of_sides; i++) {
+		struct each_side side = sides[i];
+		if ((medianX >= side.accelX.min && medianX <= side.accelX.max) &&
+		    (medianY >= side.accelY.min && medianY <= side.accelY.max) &&
+		    (medianZ >= side.accelZ.min && medianZ <= side.accelZ.max)) {
+
+			return i + 1;
+		}
+	}
+
+	return -1; // error if valus are not in range
+}
 void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
 {
 	int ret;
@@ -188,12 +230,12 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 				// return ret;
 			}
 		}
-		double G = sqrt(pow(sensor_value_to_double(&accel[0]), 2) +
+		/*double G = sqrt(pow(sensor_value_to_double(&accel[0]), 2) +
 				pow(sensor_value_to_double(&accel[1]), 2) +
-				pow(sensor_value_to_double(&accel[2]), 2));
-		Xaccel[count] = sensor_value_to_double(&accel[0]) / G;
-		Yaccel[count] = sensor_value_to_double(&accel[1]) / G;
-		Zaccel[count] = sensor_value_to_double(&accel[2]) / G;
+				pow(sensor_value_to_double(&accel[2]), 2));*/
+		Xaccel[count] = sensor_value_to_double(&accel[0]);
+		Yaccel[count] = sensor_value_to_double(&accel[1]);
+		Zaccel[count] = sensor_value_to_double(&accel[2]);
 
 		/*printk("(%12.6f, %12.6f, %12.6f)\n", sensor_value_to_double(&accel[0]),
 		       sensor_value_to_double(&accel[1]), sensor_value_to_double(&accel[2]));
@@ -206,12 +248,12 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 	medianY = calculate_median(Yaccel, number_of_samples);
 	medianZ = calculate_median(Zaccel, number_of_samples);
 
-	printk("Median X: %f \n", medianX);
-	printk("Median Y: %f \n", medianY);
-	printk("Median Z: %f \n", medianZ);
+	// printk("Median X: %f \n", medianX);
+	// printk("Median Y: %f \n", medianY);
+	// printk("Median Z: %f \n", medianZ);
 
 	double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
-	printk("Sqr: %f \n", squaresum);
+	// printk("Sqr: %f \n", squaresum);
 }
 static int get_side(const struct device *dev)
 {
@@ -220,58 +262,28 @@ static int get_side(const struct device *dev)
 	 * and return the side of the device based on the z-axis
 	 * 1 for up and -1 for down
 	 */
-	int ret;
-	/*	Check if device is ready, if not return 0	*/
+	// int ret;
+	//	Check if device is ready, if not return 0
 	if (!device_is_ready(dev)) {
 		printk("sensor: device not ready.\n");
 		return 0;
 	}
-	sampling_filter(50, dev, 100);
-	int count = 0;
+	sampling_filter(10, dev, 100);
 
-	double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
+	int correct_side = find_what_side(sides, 6);
 
-	double pitch = asin2(medianX / squaresum);
+	printk("Side: %i", correct_side);
+	return 0;
+	// int count = 0;
+	// double M_PI = 3.14;
 
-	double roll = atan2(medianY, medianZ);
-	/* Get sensor data */ /*
-	while (count < 30) {
-		ret = sensor_sample_fetch(dev);
-		if (ret < 0) {
-			printk("sensor_sample_fetch() failed: %d\n", ret);
-			return ret;
-		}
-		for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
-			ret = sensor_channel_get(dev, channels[i], &accel[i]);
-			if (ret < 0) {
-				printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
-				return ret;
-			}
-		}
+	// double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
 
-		printk("(%12.6f, %12.6f, %12.6f)\n", sensor_value_to_double(&accel[0]),
-		       sensor_value_to_double(&accel[1]), sensor_value_to_double(&accel[2]));
-		count++;
-		k_msleep(5);
-	}
-*/
-			      // for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
-			      // 	ret = sensor_channel_get(dev, channels[i], &accel[i]);
-			      // 	if (ret < 0) {
-			      // 		printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
-			      // 		return ret;
-			      // 	}
-			      // }
+	// pitch = asin(medianX / squaresum) * 180 / M_PI;
 
-	/*calculate_angles(sensor_value_to_double(&accel[0]), sensor_value_to_double(&accel[1]),
-			 sensor_value_to_double(&accel[2]));*/
-	// if (sensor_value_to_double(&accel[2]) > 0) {
-	// 	printk("Side: -1\n");
-	// 	return -1;
-	// } else {
-	// 	printk("Side: 1\n");
-	// 	return 1;
-	// }
+	// roll = atan2(medianY, medianZ) * 180 / M_PI;
+
+	// printk("Pitch: %f \nRoll: %f \n", pitch, roll);
 }
 
 static int app_topics_subscribe(void)
@@ -375,6 +387,9 @@ static void shadow_update_work_fn(struct k_work *work)
 			FATAL_ERROR();
 			return;
 		}
+		(void)k_work_reschedule(
+			&shadow_update_work,
+			K_SECONDS(CONFIG_AWS_IOT_SAMPLE_PUBLICATION_INTERVAL_SECONDS));
 	}
 
 	err = json_payload_construct(message, sizeof(message), &payload);
@@ -411,7 +426,7 @@ static void check_position(void)
 {
 	while (true) {
 		newSide = get_side(sensor);
-		/* if side is changed send event trigger */
+		/*if side is changed send event trigger*/
 		if (side != 0 && side != newSide) {
 			side = newSide;
 			// event_trigger();
@@ -419,6 +434,7 @@ static void check_position(void)
 		k_msleep(10000);
 	}
 }
+
 static void connect_work_fn(struct k_work *work)
 {
 	int err;
@@ -451,10 +467,17 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 			"from the previous session");
 	}
 
-	/* set button pressed as buttons funcion */
+#if defined(CONFIG_BOOTLOADER_MCUBOOT)
+	boot_write_img_confirmed();
+#endif
+
+	/* Start sequential updates to AWS IoT. */
+	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+
+	/* set button pressed as buttons funcion
 	gpio_init_callback(&button_cb_data, event_trigger, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
-	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
+	printk("Set up button at %s pin %d\n", button.port->name, button.pin); */
 
 	/* Start to check the position */
 	check_position();
@@ -462,9 +485,9 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 
 static void on_aws_iot_evt_disconnected(void)
 {
-	/* Remove button callback */
+	/* Remove button callback
 	gpio_remove_callback(button.port, &button_cb_data);
-	printk("Button at %s pin %d has been deactivated\n", button.port->name, button.pin);
+	printk("Button at %s pin %d has been deactivated\n", button.port->name, button.pin); */
 	(void)k_work_cancel_delayable(&shadow_update_work);
 	(void)k_work_reschedule(&connect_work, K_SECONDS(5));
 }
@@ -607,32 +630,33 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 int main(void)
 {
 	/* set side and create new side function to detect change */
-	side = get_side(sensor);
+	/*side = get_side(sensor);*/
 
 	/* init button, when button is pressed call function button-pressed */
-	int ret;
-
-	if (!gpio_is_ready_dt(&button)) {
-		printk("Error: button device %s is not ready\n", button.port->name);
-		return 0;
-	}
+	// int ret;
+	/*
+		if (!gpio_is_ready_dt(&button)) {
+			printk("Error: button device %s is not ready\n", button.port->name);
+			return 0;
+		}*/
 
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
-	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n", ret, button.port->name,
-		       button.pin);
-		return 0;
-	}
-
-	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
-	if (ret != 0) {
-		printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
-		       button.port->name, button.pin);
-		return 0;
-	}
-
+	/*
+		ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+		if (ret != 0) {
+			printk("Error %d: failed to configure %s pin %d\n", ret, button.port->name,
+			       button.pin);
+			return 0;
+		}*/
+	/*
+		ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+		if (ret != 0) {
+			printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
+			       button.port->name, button.pin);
+			return 0;
+		}
+	*/
 	/* init the aws connection */
 	int err;
 
