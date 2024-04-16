@@ -466,6 +466,7 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 
 int main(void)
 {
+	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
     settings_subsys_init();
     for (int i = 0; i < MAX_SIDES; i++) {
 		settings_register(side_confs[i]);
@@ -473,13 +474,50 @@ int main(void)
     settings_load();
     
     // Print loaded settings
-    for (int i = 0; i < MAX_SIDES; i++) {
-		printk("Loaded side_%d/timestamp: %" PRIi32 "\n", i, side_settings[i]->timestamp);
-		printk("Loaded side_%d/id: %" PRIi32 "\n", i, side_settings[i]->id);
-		printk("Loaded side_%d/type: %" PRIi32 "\n", i, side_settings[i]->type);
+    // for (int i = 0; i < MAX_SIDES; i++) {
+	// 	printk("Loaded side_%d/timestamp: %" PRIi32 "\n", i, side_settings[i]->timestamp);
+	// 	printk("Loaded side_%d/id: %" PRIi32 "\n", i, side_settings[i]->id);
+	// 	printk("Loaded side_%d/type: %" PRIi32 "\n", i, side_settings[i]->type);
+	// }
+
+	int err;
+	/* Setup handler for Zephyr NET Connection Manager events. */
+	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
+	net_mgmt_add_event_callback(&l4_cb);
+
+	/* Setup handler for Zephyr NET Connection Manager Connectivity layer. */
+	net_mgmt_init_event_callback(&conn_cb, connectivity_event_handler, CONN_LAYER_EVENT_MASK);
+	net_mgmt_add_event_callback(&conn_cb);
+
+	/* Connecting to the configured connectivity layer. */
+	LOG_INF("Bringing network interface up and connecting to the network");
+    
+	err = conn_mgr_all_if_up(true);
+	if (err) {
+		LOG_ERR("conn_mgr_all_if_up, error: %d", err);
+		FATAL_ERROR();
+		return err;
 	}
 
-    
+	err = aws_iot_client_init();
+	if (err) {
+		LOG_ERR("aws_iot_client_init, error: %d", err);
+		FATAL_ERROR();
+		return err;
+	}
+
+	/* Resend connection status if the sample is built for QEMU x86.
+	 * This is necessary because the network interface is automatically brought up
+	 * at SYS_INIT() before main() is called.
+	 * This means that NET_EVENT_L4_CONNECTED fires before the
+	 * appropriate handler l4_event_handler() is registered.
+	 */
+	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
+		conn_mgr_mon_resend_status();
+	}	
+
+
+
 	for (int i = 0; i < MAX_SIDES; i++) {
 		struct settings_data *side = side_settings[i];
 		side_settings[i]->timestamp = side->timestamp + 1000;
@@ -492,33 +530,36 @@ int main(void)
 		int ret = settings_save_one(name, &side->timestamp, sizeof(side->timestamp));
 		if (ret) {
 			printk("Error saving side_%d/timestamp: %d\n", i, ret);
-		} else {
-			printk("Saved side_%d/timestamp: %" PRIi32 "\n", i, side->timestamp);
-		}
+		} 
+		// else {
+		// 	printk("Saved side_%d/timestamp: %" PRIi32 "\n", i, side->timestamp);
+		// }
 
 		sprintf(name, "side_%d/id", i);
 		ret = settings_save_one(name, &side->id, sizeof(side->id));
 
 		if (ret) {
 			printk("Error saving side_%d/id: %d\n", i, ret);
-		} else {
-			printk("Saved side_%d/id: %" PRIi32 "\n", i, side->id);
-		}
+		} 
+		// else {
+		// 	printk("Saved side_%d/id: %" PRIi32 "\n", i, side->id);
+		// }
 
 		sprintf(name, "side_%d/type", i);
 		ret = settings_save_one(name, &side->type, sizeof(side->type));
 		if (ret) {
 			printk("Error saving side_%d/type: %d\n", i, ret);
-		} else {
-			printk("Saved side_%d/type: %" PRIi32 "\n", i, side->type);
-		}
+		} 
+		// else {
+		// 	printk("Saved side_%d/type: %" PRIi32 "\n", i, side->type);
+		// }
 	}
 		
 
     
     
-    // Wait for 5000 milliseconds and reboot
-    k_msleep(5000);
+    // Wait and reboot
+    k_msleep(60000);
     sys_reboot(SYS_REBOOT_COLD);
     
     return 0;
