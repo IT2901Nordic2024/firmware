@@ -24,14 +24,14 @@ zephyr_include_directories(src/settings_defs)
 # zephyr_include_directories(src/proto)
 
 # Include generated nanopb files
-zephyr_include_directories(${Protobuf_INCLUDE_DIRS})
-nanopb_generate_cpp(proto_sources proto_headers RELPATH . src/config.proto)
+# zephyr_include_directories(${Protobuf_INCLUDE_DIRS})
+# nanopb_generate_cpp(proto_sources proto_headers RELPATH . src/config.proto)
 
 # Include generated header files
 zephyr_library_include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-FILE(GLOB app_sources src/*.c)
-target_sources(app PRIVATE ${proto_sources} ${app_sources})
+# FILE(GLOB app_sources src/*.c)
+# target_sources(app PRIVATE ${proto_sources} ${app_sources})
 
 # Make folder containing certificates global so that it can be located by
 # the AWS IoT library.

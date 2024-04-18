@@ -15,6 +15,7 @@
     "kernel.h": "c",
     "pb_common.h": "c",
     "printk.h": "c",
-    "device.h": "c"
+    "device.h": "c",
+    "settings_defs.h": "c"
   }
 }

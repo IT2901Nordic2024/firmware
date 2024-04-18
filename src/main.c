@@ -39,7 +39,7 @@
 #include <pb_common.h>
 #include <pb_encode.h>
 #include <pb_decode.h>
-#include <src/config.pb.h>
+
 
 #define SW0_NODE	DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
@@ -48,6 +48,8 @@
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
 							      {0});
 static struct gpio_callback button_cb_data;
+
+typedef struct settings_data Settings_data; 
 
 #include "../ext_sensors/ext_sensors.h"
 
@@ -65,29 +67,6 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	LOG_ERR("Fatal error! Rebooting the device.");                                             \
 	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
-
-/*Maximum configurable sides on the device*/
-#define MAX_SIDES 11
-
-/* NVS storage configuration 
-* TODO: Adjust the storage configuration. Figure out NVS_FLASH_DEVICE name.
-*/
-#define NVS_PARTITION		  storage_partition
-#define NVS_FLASH_DEVICE 	  FIXED_PARTITION_DEVICE(NVS_PARTITION)
-#define NVS_SECTOR_SIZE       4096   
-#define NVS_SECTOR_COUNT      64     
-#define NVS_STORAGE_OFFSET    0x0000 
-#define NVS_PARTITION_OFFSET	FIXED_PARTITION_OFFSET(NVS_PARTITION)
-
-#define MAX_CONFIG_SIZE 1024
-#define CONFIG_APP_CONFIG_SIZE 1024
-
-static struct nvs_fs fs = {
-    .flash_device = NVS_FLASH_DEVICE,
-    .sector_size = NVS_SECTOR_SIZE,
-    .sector_count = NVS_SECTOR_COUNT,
-    .offset = NVS_STORAGE_OFFSET,
-};
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -324,59 +303,50 @@ static void on_net_event_l4_disconnected(void)
 	(void)k_work_cancel_delayable(&shadow_update_work);
 }
 
-void save_config(const char *encoded_message, size_t message_length) {
-	// Decode the configuration from the protobuf
-	Config config = Config_init_zero;
-	pb_istream_t stream = pb_istream_from_buffer((const pb_byte_t *)encoded_message, message_length);
-	bool status = pb_decode(&stream, Config_fields, &config);
-	if (!status) {
-		// Handle decoding error 
-		return;
-	}
-	// Print the decoded int32 id
-	LOG_INF("Received configuration with id: %d", config.id);
-	// Print the decoded int32 timestamp
-	LOG_INF("Received configuration with timestamp: %d", config.timestamp);
-	// Print the decoded string type
-	LOG_INF("Received configuration with type: %d", config.type);
-	// Print the decoded side
-	LOG_INF("Received configuration with side: %d", config.side);
-
-	// Save config using Settings
-	// Save the decoded int32 id
+static void save_side_config(int side, Settings_data side_settings){
 	char name[20];
-	int ret;
-	snprintf(name, sizeof(name), "side_%d/id", config.side);
-	printk(name);
-	ret = settings_save_one(name, &config.id, sizeof(config.id));
+	sprintf(name, "side_%d/timestamp", side);
+	int ret = settings_save_one(name, &side_settings.timestamp, sizeof(side_settings.timestamp));
 	if (ret) {
-		printk("Error saving id: %d\n", config.id);
-		printk("Error code: %d\n", ret);
-	} else {
-		printk("Saved id: %d\n", config.id);
-	}
+		printk("Error saving side_%d/timestamp: %d\n", side, ret);
+	} 
 
-	snprintf(name, sizeof(name), "side_%d/timestamp", config.side);
-	printk(name);
-	ret = settings_save_one(name, &config.timestamp, sizeof(config.timestamp));
-	if (ret) {
-		printk("Error saving timestamp: %d\n", config.timestamp);
-		printk("Error code: %d\n", ret);
-	} else {
-		printk("Saved timestamp: %d\n", config.timestamp);
-	}
+	sprintf(name, "side_%d/id", side);
+	ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
 
-	snprintf(name, sizeof(name), "side_%d/type", config.side);
-	printk(name);
-	ret = settings_save_one(name, &config.type, sizeof(config.type));
 	if (ret) {
-		printk("Error saving type: %d\n", config.type);
-		printk("Error code: %d\n", ret);
-	} else {
-		printk("Saved type: %d\n", config.type);
-	}
-	
+		printk("Error saving side_%d/id: %d\n", side, ret);
+	} 
+
+	sprintf(name, "side_%d/type", side);
+	ret = settings_save_one(name, &side_settings.type, sizeof(side_settings.type));
+	if (ret) {
+		printk("Error saving side_%d/type: %d\n", side, ret);
+	} 
 }
+
+static int start_settings_subsystem(){
+	int err = settings_subsys_init();
+	if (err) {
+		printk("Error initializing settings subsystem: %d\n", err);
+		return err;
+	}
+	for (int i = 0; i < MAX_SIDES; i++) {
+		err = settings_register(side_confs[i]);
+		if (err) {
+			printk("Error registering settings for side %d: %d\n", i, err);
+			return err;
+		}
+	}
+	err = settings_load();
+	if (err) {
+		printk("Error loading settings: %d\n", err);
+		return err;
+	}
+	return 0;
+
+}
+
 /* Event handlers */
 
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
@@ -467,20 +437,15 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 int main(void)
 {
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
-    settings_subsys_init();
-    for (int i = 0; i < MAX_SIDES; i++) {
-		settings_register(side_confs[i]);
-	}
-    settings_load();
     
-    // Print loaded settings
-    // for (int i = 0; i < MAX_SIDES; i++) {
-	// 	printk("Loaded side_%d/timestamp: %" PRIi32 "\n", i, side_settings[i]->timestamp);
-	// 	printk("Loaded side_%d/id: %" PRIi32 "\n", i, side_settings[i]->id);
-	// 	printk("Loaded side_%d/type: %" PRIi32 "\n", i, side_settings[i]->type);
-	// }
-
 	int err;
+	err = start_settings_subsystem();
+	if (err) {
+		LOG_ERR("Error starting settings subsystem: %d", err);
+		FATAL_ERROR();
+		return err;
+	}
+
 	/* Setup handler for Zephyr NET Connection Manager events. */
 	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
 	net_mgmt_add_event_callback(&l4_cb);
@@ -515,52 +480,6 @@ int main(void)
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
 	}	
-
-
-
-	for (int i = 0; i < MAX_SIDES; i++) {
-		struct settings_data *side = side_settings[i];
-		side_settings[i]->timestamp = side->timestamp + 1000;
-		side_settings[i]->id = side->id + 123;
-		side_settings[i]->type = side->type + 1;
-		
-		char name[20];
-		sprintf(name, "side_%d/timestamp", i);
-
-		int ret = settings_save_one(name, &side->timestamp, sizeof(side->timestamp));
-		if (ret) {
-			printk("Error saving side_%d/timestamp: %d\n", i, ret);
-		} 
-		// else {
-		// 	printk("Saved side_%d/timestamp: %" PRIi32 "\n", i, side->timestamp);
-		// }
-
-		sprintf(name, "side_%d/id", i);
-		ret = settings_save_one(name, &side->id, sizeof(side->id));
-
-		if (ret) {
-			printk("Error saving side_%d/id: %d\n", i, ret);
-		} 
-		// else {
-		// 	printk("Saved side_%d/id: %" PRIi32 "\n", i, side->id);
-		// }
-
-		sprintf(name, "side_%d/type", i);
-		ret = settings_save_one(name, &side->type, sizeof(side->type));
-		if (ret) {
-			printk("Error saving side_%d/type: %d\n", i, ret);
-		} 
-		// else {
-		// 	printk("Saved side_%d/type: %" PRIi32 "\n", i, side->type);
-		// }
-	}
-		
-
-    
-    
-    // Wait and reboot
-    k_msleep(60000);
-    sys_reboot(SYS_REBOOT_COLD);
     
     return 0;
 }
