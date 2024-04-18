@@ -10,9 +10,8 @@
 struct payload {
 	struct {
 		struct {
-			const char *app_version;
-			const char *modem_version;
 			uint32_t uptime;
+			int count;
 		} reported;
 	} state;
 };

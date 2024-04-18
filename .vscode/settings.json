@@ -1,7 +1,6 @@
 {
   "iis.configDir": "",
   "nrf-connect.toolchain.path": "${nrf-connect.toolchain:2.5.1}",
-  "esbonio.sphinx.confDir": "",
   "nrf-connect.applications": ["${workspaceFolder}"],
   "files.associations": {
     "settings.h": "c",
@@ -16,6 +15,8 @@
     "pb_common.h": "c",
     "printk.h": "c",
     "device.h": "c",
-    "settings_defs.h": "c"
+    "settings_defs.h": "c",
+    "types.h": "c",
+    "sensor.h": "c"
   }
 }

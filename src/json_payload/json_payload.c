@@ -19,12 +19,8 @@ int json_payload_construct(char *message, size_t size, struct payload *payload)
 	const struct json_obj_descr parameters[] = {
 		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "uptime",
 					  state.reported.uptime, JSON_TOK_NUMBER),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "app_version",
-					  state.reported.app_version, JSON_TOK_STRING),
-#if defined(CONFIG_MODEM_INFO)
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "modem_version",
-					  state.reported.modem_version, JSON_TOK_STRING)
-#endif
+		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "count",
+					  state.reported.count, JSON_TOK_NUMBER),
 	};
 	const struct json_obj_descr reported[] = {
 		JSON_OBJ_DESCR_OBJECT_NAMED(struct payload, "reported", state.reported,
