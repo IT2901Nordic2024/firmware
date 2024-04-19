@@ -42,6 +42,9 @@
 #include <pb_encode.h>
 #include <pb_decode.h>
 
+/*CJson*/
+#include <cJSON.h>
+
 
 /* button */
 #define SW0_NODE	DT_ALIAS(sw0)
@@ -446,14 +449,9 @@ static void on_net_event_l4_disconnected(void)
 
 static void save_side_config(int side, Settings_data side_settings){
 	char name[20];
-	sprintf(name, "side_%d/timestamp", side);
-	int ret = settings_save_one(name, &side_settings.timestamp, sizeof(side_settings.timestamp));
-	if (ret) {
-		printk("Error saving side_%d/timestamp: %d\n", side, ret);
-	} 
-
+	
 	sprintf(name, "side_%d/id", side);
-	ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
+	int ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
 
 	if (ret) {
 		printk("Error saving side_%d/id: %d\n", side, ret);
@@ -486,6 +484,94 @@ static int start_settings_subsystem(){
 	}
 	return 0;
 
+}
+
+static cJSON *parse_config_json(const char *json){
+	// Parse JSON data, use example json as basis
+	cJSON *root = cJSON_Parse(json);
+	if (root == NULL) {
+		const char *error_ptr = cJSON_GetErrorPtr();
+		if (error_ptr != NULL) {
+			printk("Error before: %s\n", error_ptr);
+		}
+		return NULL;
+	}
+	// Get version
+	cJSON *version = cJSON_GetObjectItem(root, "version");
+	if (cJSON_IsNumber(version)) {
+		printk("Version: %d\n", version->valueint);
+	} else {
+		printk("Version is not a number\n");
+	}
+	// Get timestamp
+	cJSON *timestamp = cJSON_GetObjectItem(root, "timestamp");
+	if (cJSON_IsNumber(timestamp)) {
+		printk("Timestamp: %d\n", timestamp->valueint);
+	} else {
+		printk("Timestamp is not a number\n");
+	}
+	// Get state
+	cJSON *state = cJSON_GetObjectItem(root, "state");
+	if (cJSON_IsObject(state)) {
+		cJSON *item = NULL;
+		cJSON_ArrayForEach(item, state) {
+			const char *key = item->string;
+			cJSON *id = cJSON_GetObjectItem(item, "id");
+			cJSON *type = cJSON_GetObjectItem(item, "type");
+			if (cJSON_IsString(id)) {
+				printk("ID: %s\n", id->valuestring);
+			} else {
+				printk("ID is not a string\n");
+			}
+			if (cJSON_IsString(type)) {
+				printk("Type: %s\n", type->valuestring);
+			} else {
+				printk("Type is not a string\n");
+			}
+		}
+	} else {
+		printk("State is not an object\n");
+	}
+	// Get metadata
+	cJSON *metadata = cJSON_GetObjectItem(root, "metadata");
+	if (cJSON_IsObject(metadata)) {
+		cJSON *item = NULL;
+		cJSON_ArrayForEach(item, metadata) {
+			const char *key = item->string;
+			cJSON *id = cJSON_GetObjectItem(item, "id");
+			cJSON *type = cJSON_GetObjectItem(item, "type");
+			if (cJSON_IsObject(id)) {
+				cJSON *timestamp = cJSON_GetObjectItem(id, "timestamp");
+				if (cJSON_IsNumber(timestamp)) {
+					printk("ID timestamp: %d\n", timestamp->valueint);
+				} else {
+					printk("ID timestamp is not a number\n");
+				}
+			} else {
+				printk("ID is not an object\n");
+			}
+			if (cJSON_IsObject(type)) {
+				cJSON *timestamp = cJSON_GetObjectItem(type, "timestamp");
+				if (cJSON_IsNumber(timestamp)) {
+					printk("Type timestamp: %d\n", timestamp->valueint);
+				} else {
+					printk("Type timestamp is not a number\n");
+				}
+			} else {
+				printk("Type is not an object\n");
+			}
+		}
+	} else {
+		printk("Metadata is not an object\n");
+	}
+
+	// Print JSON data
+	char *json_data = cJSON_Print(root);
+	printk("JSON data: %s\n", json_data);
+	
+	// Return root and free json_data
+	cJSON_free(json_data);
+	return root;
 }
 
 /* Event handlers */

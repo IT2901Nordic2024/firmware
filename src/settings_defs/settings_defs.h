@@ -7,7 +7,6 @@
 #define MAX_SIDES 11
 
 struct settings_data {
-    int32_t timestamp;
     int32_t id;
     int32_t type;
 };
