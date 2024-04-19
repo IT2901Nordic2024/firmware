@@ -447,6 +447,7 @@ static void on_net_event_l4_disconnected(void)
 	(void)k_work_cancel_delayable(&shadow_update_work);
 }
 
+
 static void save_side_config(int side, Settings_data side_settings){
 	char name[20];
 	
@@ -486,23 +487,24 @@ static int start_settings_subsystem(){
 
 }
 
-static cJSON *parse_config_json(const char *json){
-	// Parse JSON data, use example json as basis
-	cJSON *root = cJSON_Parse(json);
-	if (root == NULL) {
-		const char *error_ptr = cJSON_GetErrorPtr();
-		if (error_ptr != NULL) {
-			printk("Error before: %s\n", error_ptr);
-		}
-		return NULL;
-	}
-	// Get version
-	cJSON *version = cJSON_GetObjectItem(root, "version");
-	if (cJSON_IsNumber(version)) {
-		printk("Version: %d\n", version->valueint);
-	} else {
-		printk("Version is not a number\n");
-	}
+static void parse_config_json(const char *json){
+    cJSON *root = cJSON_Parse(json);
+    if (root == NULL) {
+        const char *error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr != NULL) {
+            printk("Error before: %s\n", error_ptr);
+        }
+        return;
+    }
+
+    // Get version
+    cJSON *version = cJSON_GetObjectItem(root, "version");
+    if (cJSON_IsNumber(version)) {
+        printk("Version: %d\n", version->valueint);
+    } else {
+        printk("Version is not a number\n");
+    }
+
 	// Get timestamp
 	cJSON *timestamp = cJSON_GetObjectItem(root, "timestamp");
 	if (cJSON_IsNumber(timestamp)) {
@@ -510,68 +512,47 @@ static cJSON *parse_config_json(const char *json){
 	} else {
 		printk("Timestamp is not a number\n");
 	}
-	// Get state
-	cJSON *state = cJSON_GetObjectItem(root, "state");
-	if (cJSON_IsObject(state)) {
-		cJSON *item = NULL;
-		cJSON_ArrayForEach(item, state) {
-			const char *key = item->string;
-			cJSON *id = cJSON_GetObjectItem(item, "id");
-			cJSON *type = cJSON_GetObjectItem(item, "type");
-			if (cJSON_IsString(id)) {
-				printk("ID: %s\n", id->valuestring);
-			} else {
-				printk("ID is not a string\n");
-			}
-			if (cJSON_IsString(type)) {
-				printk("Type: %s\n", type->valuestring);
-			} else {
-				printk("Type is not a string\n");
-			}
-		}
-	} else {
-		printk("State is not an object\n");
-	}
-	// Get metadata
-	cJSON *metadata = cJSON_GetObjectItem(root, "metadata");
-	if (cJSON_IsObject(metadata)) {
-		cJSON *item = NULL;
-		cJSON_ArrayForEach(item, metadata) {
-			const char *key = item->string;
-			cJSON *id = cJSON_GetObjectItem(item, "id");
-			cJSON *type = cJSON_GetObjectItem(item, "type");
-			if (cJSON_IsObject(id)) {
-				cJSON *timestamp = cJSON_GetObjectItem(id, "timestamp");
-				if (cJSON_IsNumber(timestamp)) {
-					printk("ID timestamp: %d\n", timestamp->valueint);
-				} else {
-					printk("ID timestamp is not a number\n");
-				}
-			} else {
-				printk("ID is not an object\n");
-			}
-			if (cJSON_IsObject(type)) {
-				cJSON *timestamp = cJSON_GetObjectItem(type, "timestamp");
-				if (cJSON_IsNumber(timestamp)) {
-					printk("Type timestamp: %d\n", timestamp->valueint);
-				} else {
-					printk("Type timestamp is not a number\n");
-				}
-			} else {
-				printk("Type is not an object\n");
-			}
-		}
-	} else {
-		printk("Metadata is not an object\n");
-	}
 
-	// Print JSON data
-	char *json_data = cJSON_Print(root);
-	printk("JSON data: %s\n", json_data);
+    // Get state
+    cJSON *state = cJSON_GetObjectItem(root, "state");
+    if (state != NULL) {
+        // Iterate over each side config in state
+        for (cJSON *side_config = state->child; side_config != NULL; side_config = side_config->next) {
+            // Get side number
+            int side = atoi(side_config->string);
+			printk("Side: %d\n", side);
+            // Get id and type
+            cJSON *id = cJSON_GetObjectItem(side_config, "id");
+            cJSON *type = cJSON_GetObjectItem(side_config, "type");
 	
-	// Return root and free json_data
-	cJSON_free(json_data);
-	return root;
+
+            // Create Settings_data and save it
+            Settings_data side_settings_from_json;
+            if (id != NULL && cJSON_IsString(id)) {
+                side_settings_from_json.id = id->valuestring;
+				printk("Id: %d\n", side_settings_from_json.id);
+				if (type != NULL && cJSON_IsString(type)) {
+                if (strcmp(type->valuestring, "TIME") == 0) {
+                    side_settings_from_json.type = "TIME";
+                } else if (strcmp(type->valuestring, "COUNT") == 0) {
+                    side_settings_from_json.type = "COUNT";
+                } 
+            	} else {
+					side_settings_from_json.type = side_settings[side]->type;
+					printk("Copied type from previous: %s\n", side_settings[side]->type);
+				}
+				printk("Type: %s\n", side_settings_from_json.type);
+				save_side_config(side, side_settings_from_json);
+            } else {
+				printk("Throwing away side config due to invalid id or type\n");
+			}
+		
+        }
+    } else {
+        printk("State is not an object\n");
+    }
+
+    cJSON_Delete(root);
 }
 
 /* Event handlers */
@@ -595,9 +576,11 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_DATA_RECEIVED:
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
-		//save_config(evt->data.msg.topic.str, sizeof(evt->data.msg.topic.str));
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
+		if (strncmp(evt->data.msg.topic.str, "$aws/things/T1/shadow/update/delta", evt->data.msg.topic.len) == 0) {
+			parse_config_json(evt->data.msg.ptr);
+		}
 		break;
 	case AWS_IOT_EVT_PUBACK:
 		LOG_INF("AWS_IOT_EVT_PUBACK, message ID: %d", evt->data.message_id);
@@ -632,6 +615,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	}
 }
+
 
 static void l4_event_handler(struct net_mgmt_event_callback *cb, uint32_t event,
 			     struct net_if *iface)

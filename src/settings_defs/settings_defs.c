@@ -3,17 +3,17 @@
 
 #define DEFAULT_TYPE_VALUE 0
 
-struct settings_data side_0_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_1_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_2_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_3_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_4_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_5_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_6_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_7_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_8_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_9_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_10_settings = { .id = 0, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_0_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_1_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_2_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_3_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_4_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_5_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_6_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_7_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_8_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_9_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_10_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
 
 struct settings_data *side_settings[MAX_SIDES] = {
     &side_0_settings,

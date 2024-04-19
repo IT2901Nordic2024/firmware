@@ -7,7 +7,7 @@
 #define MAX_SIDES 11
 
 struct settings_data {
-    int32_t id;
+    char *id;
     int32_t type;
 };
 
