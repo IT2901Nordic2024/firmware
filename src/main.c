@@ -73,6 +73,10 @@ char accelZ[10];
 /* counter variables */
 int occurrence_count = 0;
 
+/* time variables */
+uint32_t start_time;
+uint32_t time;
+
 /* LED */
 #define LED0_NODE DT_ALIAS(led0)
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
@@ -169,13 +173,14 @@ static int get_side(const struct device *dev)
 		}
 	}
 
-	printk("Value of z: %f\n", sensor_value_to_double(&accel[2]));
+	//printk("Value of z: %f\n", sensor_value_to_double(&accel[2]));
 	if (sensor_value_to_double(&accel[2]) > 0) {
-		printk("Side: 1\n");
+		//printk("Side: 1\n");
+		printk("Elapsed time: %lld ms\n", k_uptime_get() - start_time);
 		return 1;
 	}
 	else {
-		printk("Side: -1\n");
+		//printk("Side: -1\n");
 		return -1;
 	}
 }
@@ -256,6 +261,7 @@ static void shadow_update_work_fn(struct k_work *work)
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
 		.state.reported.count = occurrence_count,
+		.state.reported.time = time,
 	}; 
 
 	//set counter to 0
@@ -319,8 +325,16 @@ static void check_position(void) {
         newSide = get_side(sensor);
 				/* if side is changed send event trigger */
         if (side != 0 && side != newSide) {
-            side = newSide;
+					side = newSide;
+					if (side == 1) {
+						printk("Starting timer\n");
+						start_time = k_uptime_get();
+					}
+					else {
+						printk("Stopping timer\n");
+						time = k_uptime_get() - start_time;
             event_trigger();
+					}
         }
         k_msleep(2000);
     }
@@ -364,7 +378,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
 	/* Start to check the position */
-	// check_position();
+	check_position();
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -571,10 +585,11 @@ static int init_button()
 	return ret;
 }
 
+
 int main(void)
 {	
 	/* set side and create new side function to detect change */
-	// side = get_side(sensor);
+	side = get_side(sensor);
 
 	int ret;
 	// initialize led function

@@ -12,6 +12,7 @@ struct payload {
 		struct {
 			uint32_t uptime;
 			int count;
+			uint32_t time;
 		} reported;
 	} state;
 };
