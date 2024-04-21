@@ -75,7 +75,7 @@ int occurrence_count = 0;
 
 /* time variables */
 uint32_t start_time;
-uint32_t time;
+uint32_t time = 0;
 
 /* LED */
 #define LED0_NODE DT_ALIAS(led0)
@@ -378,7 +378,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
 	/* Start to check the position */
-	check_position();
+	// check_position();
 }
 
 static void on_aws_iot_evt_disconnected(void)
