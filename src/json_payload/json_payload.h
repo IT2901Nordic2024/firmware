@@ -14,6 +14,7 @@ struct payload {
 			const char *accelX;
 			const char *accelY;
 			const char *accelZ;
+			int correct_side;
 		} reported;
 	} state;
 };

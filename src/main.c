@@ -160,12 +160,12 @@ struct each_side {
 };
 
 struct each_side sides[6] = {
-	{{-4.405, 4.405}, {-4.405, 4.405}, {-14.215, -5.405}}, // side 1
-	{{-4.405, 4.405}, {5.405, 14.215}, {-4.405, 4.405}},   // side 2
-	{{-14.215, -5.405}, {-4.405, 4.405}, {-4.405, 4.405}}, // side 3
-	{{9.81, 14.215}, {-4.405, 4.405}, {-4.405, 4.405}},    // side 4
-	{{-4.405, 4.405}, {-14.215, -5.405}, {-4.405, 4.405}}, // side 5
-	{{-4.405, 4.405}, {-4.405, 4.405}, {5.405, 14.215}},   // side 6
+	{{-2.2025, 2.2025}, {-2.2025, 2.2025}, {-12.0125, -7.6075}}, // side 1
+	{{-2.2025, 2.2025}, {7.6075, 12.0125}, {-2.2025, 2.2025}},   // side 2
+	{{7.6075, 12.0125}, {-2.2025, 2.2025}, {-2.2025, 2.2025}},   // side 3
+	{{-12.0125, -7.6075}, {-2.2025, 2.2025}, {-2.2025, 2.2025}}, // side 4
+	{{-2.2025, 2.2025}, {-12.0125, -7.6075}, {-2.2025, 2.2025}}, // side 5
+	{{-2.2025, 2.2025}, {-2.2025, 2.2025}, {7.6075, 12.0125}},   // side 6
 };
 
 int compare(const void *a, const void *b)
@@ -255,6 +255,7 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 	double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
 	// printk("Sqr: %f \n", squaresum);
 }
+int correct_side;
 static int get_side(const struct device *dev)
 {
 	/*
@@ -270,10 +271,10 @@ static int get_side(const struct device *dev)
 	}
 	sampling_filter(10, dev, 100);
 
-	int correct_side = find_what_side(sides, 6);
+	correct_side = find_what_side(sides, 6);
 
 	printk("Side: %i", correct_side);
-	return 0;
+	return correct_side;
 	// int count = 0;
 	// double M_PI = 3.14;
 
@@ -364,6 +365,7 @@ static void shadow_update_work_fn(struct k_work *work)
 		.state.reported.accelX = accelX,
 		.state.reported.accelY = accelY,
 		.state.reported.accelZ = accelZ,
+		.state.reported.correct_side = correct_side,
 	};
 
 	err = json_payload_construct(message, sizeof(message), &payload);
@@ -387,9 +389,6 @@ static void shadow_update_work_fn(struct k_work *work)
 			FATAL_ERROR();
 			return;
 		}
-		(void)k_work_reschedule(
-			&shadow_update_work,
-			K_SECONDS(CONFIG_AWS_IOT_SAMPLE_PUBLICATION_INTERVAL_SECONDS));
 	}
 
 	err = json_payload_construct(message, sizeof(message), &payload);
@@ -410,6 +409,9 @@ static void shadow_update_work_fn(struct k_work *work)
 		FATAL_ERROR();
 		return;
 	}
+
+	(void)k_work_reschedule(&shadow_update_work,
+				K_SECONDS(CONFIG_AWS_IOT_SAMPLE_PUBLICATION_INTERVAL_SECONDS));
 }
 
 /* System Workqueue handlers. */
@@ -429,9 +431,9 @@ static void check_position(void)
 		/*if side is changed send event trigger*/
 		if (side != 0 && side != newSide) {
 			side = newSide;
-			// event_trigger();
+			event_trigger();
 		}
-		k_msleep(10000);
+		k_msleep(1000);
 	}
 }
 
@@ -678,12 +680,12 @@ int main(void)
 		return err;
 	}
 
-	err = aws_iot_client_init();
+	/*err = aws_iot_client_init();
 	if (err) {
 		LOG_ERR("aws_iot_client_init, error: %d", err);
 		FATAL_ERROR();
 		return err;
-	}
+	}*/
 
 	/* Resend connection status if the sample is built for QEMU x86.
 	 * This is necessary because the network interface is automatically brought up
