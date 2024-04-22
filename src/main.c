@@ -530,7 +530,7 @@ static void parse_config_json(const char *json){
             Settings_data side_settings_from_json;
             if (id != NULL && cJSON_IsString(id)) {
                 side_settings_from_json.id = id->valuestring;
-				printk("Id: %d\n", side_settings_from_json.id);
+				printk("Id: %s\n", side_settings_from_json.id);
 				if (type != NULL && cJSON_IsString(type)) {
                 if (strcmp(type->valuestring, "TIME") == 0) {
                     side_settings_from_json.type = "TIME";
@@ -578,7 +578,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
-		if (strncmp(evt->data.msg.topic.str, "$aws/things/T1/shadow/update/delta", evt->data.msg.topic.len) == 0) {
+		if (strncmp(evt->data.msg.topic.str, "$aws/things/T3/shadow/update/delta", evt->data.msg.topic.len) == 0) {
 			parse_config_json(evt->data.msg.ptr);
 		}
 		break;
