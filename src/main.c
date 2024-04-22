@@ -159,6 +159,7 @@ struct each_side {
 	struct range_values accelZ;
 };
 
+/*endre til normal vectors len 12*/
 struct each_side sides[6] = {
 	{{-2.2025, 2.2025}, {-2.2025, 2.2025}, {-12.0125, -7.6075}}, // side 1
 	{{-2.2025, 2.2025}, {7.6075, 12.0125}, {-2.2025, 2.2025}},   // side 2
@@ -196,15 +197,26 @@ double calculate_median(double accel[], int array_size)
 	}
 }
 
+/*parametere er to lister på len 3*/
+double vector_dot_product(double vector1[], double vector2[])
+{
+	return vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector2[2];
+}
+
 int find_what_side(struct each_side sides[], int number_of_sides)
 {
-
+	/*liste av enhetsvektorer ikke side verdier*/
+	double sidearray[3] = {1, 2, 3};
+	double nowarray[3] = {medianX, medianY, medianZ};
+	/*endre delta*/
+	double delta = 2;
 	for (size_t i = 0; i < number_of_sides; i++) {
 		struct each_side side = sides[i];
-		if ((medianX >= side.accelX.min && medianX <= side.accelX.max) &&
-		    (medianY >= side.accelY.min && medianY <= side.accelY.max) &&
-		    (medianZ >= side.accelZ.min && medianZ <= side.accelZ.max)) {
 
+		/*normal vektoren for siden i stedenfor side*/
+		double normal_acc = vector_dot_product(sidearray, nowarray);
+
+		if (normal_acc > 9.81 - delta) {
 			return i + 1;
 		}
 	}
@@ -248,14 +260,14 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 	medianY = calculate_median(Yaccel, number_of_samples);
 	medianZ = calculate_median(Zaccel, number_of_samples);
 
-	// printk("Median X: %f \n", medianX);
+	printk("x: %f y: %f z: %f\n", medianX, medianY, medianZ);
 	// printk("Median Y: %f \n", medianY);
 	// printk("Median Z: %f \n", medianZ);
 
 	double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
 	// printk("Sqr: %f \n", squaresum);
 }
-int correct_side;
+int correct_side = 0;
 static int get_side(const struct device *dev)
 {
 	/*
@@ -269,12 +281,14 @@ static int get_side(const struct device *dev)
 		printk("sensor: device not ready.\n");
 		return 0;
 	}
+
+	/*bruk 500-600 samples for å finne vektor*/
 	sampling_filter(10, dev, 100);
 
-	correct_side = find_what_side(sides, 6);
+	/*correct_side = find_what_side(sides, 6);*/
 
-	printk("Side: %i", correct_side);
-	return correct_side;
+	/*printk("Side: %i", correct_side);*/
+	return 0;
 	// int count = 0;
 	// double M_PI = 3.14;
 
@@ -427,12 +441,14 @@ void event_trigger()
 static void check_position(void)
 {
 	while (true) {
+
 		newSide = get_side(sensor);
 		/*if side is changed send event trigger*/
 		if (side != 0 && side != newSide) {
 			side = newSide;
 			event_trigger();
 		}
+		/*endre når finne vektor fordi antall samples øker*/
 		k_msleep(1000);
 	}
 }
@@ -680,12 +696,12 @@ int main(void)
 		return err;
 	}
 
-	/*err = aws_iot_client_init();
+	err = aws_iot_client_init();
 	if (err) {
 		LOG_ERR("aws_iot_client_init, error: %d", err);
 		FATAL_ERROR();
 		return err;
-	}*/
+	}
 
 	/* Resend connection status if the sample is built for QEMU x86.
 	 * This is necessary because the network interface is automatically brought up
