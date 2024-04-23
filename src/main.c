@@ -95,9 +95,13 @@ static void shadow_update_work_fn(struct k_work *work);
 static void connect_work_fn(struct k_work *work);
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
 
+static void check_position(void);
+
 /* Work items used to control some aspects of the sample. */
 static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
+
+static K_THREAD_DEFINE(check_pos_thread, 2048, check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0);
 
 /* Static functions */
 static void turn_led_off(struct k_work *work)
@@ -378,7 +382,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 
 	/* Start to check the position */
-	// check_position();
+	k_thread_start(check_pos_thread);
 }
 
 static void on_aws_iot_evt_disconnected(void)
