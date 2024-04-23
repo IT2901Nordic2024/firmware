@@ -125,16 +125,8 @@ static int fetch_accels(const struct device *dev)
 	snprintf(accelX, sizeof(accelX), "%f", sensor_value_to_double(&accel[0]));
 	snprintf(accelY, sizeof(accelY), "%f", sensor_value_to_double(&accel[1]));
 	snprintf(accelZ, sizeof(accelZ), "%f", sensor_value_to_double(&accel[2]));
-	// printf("Value of X: %s\n", accelX);
-	// printf("Value of Y: %s\n", accelY);
-	// printf("Value of Z: %s\n", accelZ);
-	return 0;
-}
 
-void calculate_angles(double accelX, double accelY, double accelZ)
-{
-	double roll = atan2(accelY, accelZ);
-	printk("roll value: %f\n", roll);
+	return 0;
 }
 
 double Xaccel[10] = {};
@@ -147,26 +139,26 @@ double medianZ;
 
 /*Config for each side*/
 // struct to represent the range values for each side
-
-struct range_values {
-	double min;
-	double max;
-};
-
 struct each_side {
-	struct range_values accelX;
-	struct range_values accelY;
-	struct range_values accelZ;
+	double accelX;
+	double accelY;
+	double accelZ;
 };
 
 /*endre til normal vectors len 12*/
-struct each_side sides[6] = {
-	{{-2.2025, 2.2025}, {-2.2025, 2.2025}, {-12.0125, -7.6075}}, // side 1
-	{{-2.2025, 2.2025}, {7.6075, 12.0125}, {-2.2025, 2.2025}},   // side 2
-	{{7.6075, 12.0125}, {-2.2025, 2.2025}, {-2.2025, 2.2025}},   // side 3
-	{{-12.0125, -7.6075}, {-2.2025, 2.2025}, {-2.2025, 2.2025}}, // side 4
-	{{-2.2025, 2.2025}, {-12.0125, -7.6075}, {-2.2025, 2.2025}}, // side 5
-	{{-2.2025, 2.2025}, {-2.2025, 2.2025}, {7.6075, 12.0125}},   // side 6
+struct each_side normal_vectors[12] = {
+	{-0.003696148, -0.069007951, -0.996817534}, // side 0
+	{0.879237385, -0.308156155, -0.361714449},  // side 1
+	{-0.024281719, -0.90438758, -0.422177015},  // side 2
+	{-0.884967095, -0.232578156, -0.400957651}, // side 3
+	{-0.553576905, 0.735285768, -0.389626839},  // side 4
+	{0.525613609, 0.741611336, -0.415332151},   // side 5
+	{-0.541858156, -0.691422294, 0.476691277},  // side 6
+	{0.475564405, -0.757096215, 0.442519528},   // side 7
+	{0.810239622, 0.211181093, 0.540259636},    // side 8
+	{-0.031841904, 0.852591043, 0.519405125},   // side 9
+	{-0.857683398, 0.311294211, 0.408629604},   // side 10
+	{0.005361934, -0.033163197, 0.995770246},   // side 11
 };
 
 int compare(const void *a, const void *b)
@@ -186,10 +178,9 @@ int compare(const void *a, const void *b)
 // Function to calculate median
 double calculate_median(double accel[], int array_size)
 {
-	/*Sort list of values*/
+
 	qsort(accel, array_size, sizeof(int), compare);
 
-	/*Check if array size even or odd to know whitch median teqnique to use */
 	if (array_size % 2 == 0) {
 		return (accel[array_size / 2 - 1] + accel[array_size / 2]) / 2.0;
 	} else {
@@ -197,7 +188,6 @@ double calculate_median(double accel[], int array_size)
 	}
 }
 
-/*parametere er to lister på len 3*/
 double vector_dot_product(double vector1[], double vector2[])
 {
 	return vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector2[2];
@@ -205,24 +195,27 @@ double vector_dot_product(double vector1[], double vector2[])
 
 int find_what_side(struct each_side sides[], int number_of_sides)
 {
-	/*liste av enhetsvektorer ikke side verdier*/
-	double sidearray[3] = {1, 2, 3};
-	double nowarray[3] = {medianX, medianY, medianZ};
-	/*endre delta*/
+
+	double median_vector[3] = {medianX, medianY, medianZ};
+
 	double delta = 2;
 	for (size_t i = 0; i < number_of_sides; i++) {
 		struct each_side side = sides[i];
+		double normal_vector[3] = {sides[i].accelX, sides[i].accelY, sides[i].accelZ};
 
-		/*normal vektoren for siden i stedenfor side*/
-		double normal_acc = vector_dot_product(sidearray, nowarray);
+		double normal_acc = vector_dot_product(normal_vector, median_vector);
 
 		if (normal_acc > 9.81 - delta) {
-			return i + 1;
+			return i;
 		}
 	}
 
 	return -1; // error if valus are not in range
 }
+char median_values_X[10];
+char median_values_Y[10];
+char median_values_Z[10];
+
 void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
 {
 	int ret;
@@ -233,25 +226,18 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 		ret = sensor_sample_fetch(dev);
 		if (ret < 0) {
 			printk("sensor_sample_fetch() failed: %d\n", ret);
-			// return ret;
 		}
 		for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
 			ret = sensor_channel_get(dev, channels[i], &accel[i]);
 			if (ret < 0) {
 				printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
-				// return ret;
 			}
 		}
-		/*double G = sqrt(pow(sensor_value_to_double(&accel[0]), 2) +
-				pow(sensor_value_to_double(&accel[1]), 2) +
-				pow(sensor_value_to_double(&accel[2]), 2));*/
+
 		Xaccel[count] = sensor_value_to_double(&accel[0]);
 		Yaccel[count] = sensor_value_to_double(&accel[1]);
 		Zaccel[count] = sensor_value_to_double(&accel[2]);
 
-		/*printk("(%12.6f, %12.6f, %12.6f)\n", sensor_value_to_double(&accel[0]),
-		       sensor_value_to_double(&accel[1]), sensor_value_to_double(&accel[2]));
-		*/
 		count++;
 		k_msleep(ms);
 	}
@@ -260,45 +246,28 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 	medianY = calculate_median(Yaccel, number_of_samples);
 	medianZ = calculate_median(Zaccel, number_of_samples);
 
-	printk("x: %f y: %f z: %f\n", medianX, medianY, medianZ);
-	// printk("Median Y: %f \n", medianY);
-	// printk("Median Z: %f \n", medianZ);
+	snprintf(median_values_X, sizeof(median_values_X), "%f", medianX);
+	snprintf(median_values_Y, sizeof(median_values_Y), "%f", medianY);
+	snprintf(median_values_Z, sizeof(median_values_Z), "%f", medianZ);
 
 	double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
-	// printk("Sqr: %f \n", squaresum);
 }
 int correct_side = 0;
 static int get_side(const struct device *dev)
 {
-	/*
-	 * Fetch sensor data from the accelerometer sensor
-	 * and return the side of the device based on the z-axis
-	 * 1 for up and -1 for down
-	 */
-	// int ret;
+
 	//	Check if device is ready, if not return 0
 	if (!device_is_ready(dev)) {
 		printk("sensor: device not ready.\n");
 		return 0;
 	}
 
-	/*bruk 500-600 samples for å finne vektor*/
 	sampling_filter(10, dev, 100);
 
-	/*correct_side = find_what_side(sides, 6);*/
+	correct_side = find_what_side(normal_vectors, 12);
 
-	/*printk("Side: %i", correct_side);*/
-	return 0;
-	// int count = 0;
-	// double M_PI = 3.14;
-
-	// double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
-
-	// pitch = asin(medianX / squaresum) * 180 / M_PI;
-
-	// roll = atan2(medianY, medianZ) * 180 / M_PI;
-
-	// printk("Pitch: %f \nRoll: %f \n", pitch, roll);
+	printk("Side: %i \n", correct_side);
+	return correct_side;
 }
 
 static int app_topics_subscribe(void)
@@ -376,9 +345,9 @@ static void shadow_update_work_fn(struct k_work *work)
 	fetch_accels(sensor);
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
-		.state.reported.accelX = accelX,
-		.state.reported.accelY = accelY,
-		.state.reported.accelZ = accelZ,
+		.state.reported.median_values_X = median_values_X,
+		.state.reported.median_values_Y = median_values_Y,
+		.state.reported.median_values_Z = median_values_Z,
 		.state.reported.correct_side = correct_side,
 	};
 
@@ -444,7 +413,7 @@ static void check_position(void)
 
 		newSide = get_side(sensor);
 		/*if side is changed send event trigger*/
-		if (side != 0 && side != newSide) {
+		if (side != -1 && side != newSide) {
 			side = newSide;
 			event_trigger();
 		}
