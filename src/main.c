@@ -80,7 +80,6 @@ uint32_t time = 0;
 /* LED */
 #define LED0_NODE DT_ALIAS(led0)
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
-static struct k_work_delayable led_off_work;
 
 /* Side of the device for sending based on rotation */
 int side;
@@ -94,12 +93,13 @@ static struct net_mgmt_event_callback conn_cb;
 static void shadow_update_work_fn(struct k_work *work);
 static void connect_work_fn(struct k_work *work);
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
-
 static void check_position(void);
+static void turn_led_off(struct k_work *work);
 
 /* Work items used to control some aspects of the sample. */
 static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
+static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
 
 static K_THREAD_DEFINE(check_pos_thread, 2048, check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0);
 
@@ -558,8 +558,8 @@ static int init_led()
 	if (ret < 0) {
 		return 0;
 	}
-	k_work_init_delayable(&led_off_work, turn_led_off);
 	return ret;
+	k_work_schedule(&led_off_work, K_NO_WAIT);
 }
 
 static int init_button()
