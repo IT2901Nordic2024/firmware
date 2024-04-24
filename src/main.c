@@ -101,7 +101,9 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
 
+/* Thread for checking the position of the device */
 static K_THREAD_DEFINE(check_pos_thread, 2048, check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0);
+
 
 /* Static functions */
 static void turn_led_off(struct k_work *work)
@@ -323,11 +325,12 @@ static void event_trigger()
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
-/* function with a while loop that checks if side is changed */
+/* function to check side, runs in separate tread */
 static void check_position(void) {
    while (true) {
         newSide = get_side(sensor);
-				/* if side is changed send event trigger */
+				/* if side is changed to side start timer */
+				/* else stop timer and send event trigger*/
         if (side != 0 && side != newSide) {
 					side = newSide;
 					if (side == 1) {
@@ -340,6 +343,7 @@ static void check_position(void) {
             event_trigger();
 					}
         }
+				/* sleep for 2 seconds */
         k_msleep(2000);
     }
 }
@@ -541,7 +545,6 @@ static void impact_handler(const struct ext_sensor_evt *const evt)
 					k_work_schedule(&led_off_work, K_SECONDS(0.2));
 					(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
 					
-			// Handle other events...
 			default:
 					break;
 	}
