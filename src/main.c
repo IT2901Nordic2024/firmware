@@ -478,7 +478,6 @@ static void save_side_config(int side, Settings_data side_settings){
 	char name[20];
 	
 	sprintf(name, "side_%d/id", side);
-	printk("Saving side_%d/id: %s\n", side, side_settings.id);
 	int ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
 
 	if (ret) {
@@ -486,18 +485,12 @@ static void save_side_config(int side, Settings_data side_settings){
 	} 
 
 	sprintf(name, "side_%d/type", side);
-	printk("Saving side_%d/type: %s\n", side, side_settings.type);
 	ret = settings_save_one(name, &side_settings.type, sizeof(side_settings.type));
 	if (ret) {
 		printk("Error saving side_%d/type: %d\n", side, ret);
 	} 
-	printk("Saved side_%d\n", side);
 	printk("Saved side_%d/id: %s\n", side, side_settings.id);
 	printk("Saved side_%d/type: %s\n", side, side_settings.type);
-	// Iterate over id string and print each char individually
-	for (int i = 0; i < strlen(side_settings.id); i++) {
-		printk("Char %d: %c\n", i, side_settings.id[i]);
-	}
 }
 
 static int start_settings_subsystem(){
@@ -554,11 +547,11 @@ static void parse_config_json(const char *json){
 		printk("Timestamp is not a number\n");
 	}
 
-	// Empty side items
-	for (int i = 0; i < MAX_SIDES; i++) {
-		side_items[i] = NULL;
-	}
-	payload_side_count = 0;
+	// // Empty side items
+	// for (int i = 0; i < MAX_SIDES; i++) {
+	// 	side_items[i] = NULL;
+	// }
+	// payload_side_count = 0;
 
     // Get state
     cJSON *state = cJSON_GetObjectItem(root, "state");
@@ -594,8 +587,8 @@ static void parse_config_json(const char *json){
 				}
 				printk("Type: %s\n", side_settings_from_json.type);
 				save_side_config(side, side_settings_from_json);
-				side_items[side] = &side_settings_from_json;
-				payload_side_count++;
+				// side_items[side] = &side_settings_from_json;
+				// payload_side_count++;
             } else {
 				printk("Throwing away side config due to invalid id or type\n");
 			}
@@ -869,14 +862,6 @@ int main(void)
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
 	}	
-
-	Settings_data test_settings_data;
-	
-	test_settings_data.id = "test242424";
-	test_settings_data.type = "TIME";
-
-	save_side_config(7, test_settings_data);
-
 
     return 0;
 }

@@ -1,0 +1,187 @@
+{
+  "state": {
+    "desired": {
+      "0": {
+        "id": "41242421",
+        "type": "TIME"
+      },
+      "1": {
+        "id": "52052915168684",
+        "type": "TIME"
+      },
+      "2": {
+        "id": "52052915168685",
+        "type": "TIME"
+      },
+      "3": {
+        "id": "52005252",
+        "type": "COUNT"
+      },
+      "4": {
+        "id": "9527528242",
+        "type": "COUNT"
+      },
+      "5": {
+        "id": "1521785218522",
+        "type": "COUNT"
+      },
+      "6": {
+        "id": "1521785218523",
+        "type": "COUNT"
+      },
+      "7": {
+        "id": "1521785218524",
+        "type": "COUNT"
+      },
+      "8": {
+        "id": "1521785218525",
+        "type": "COUNT"
+      },
+      "9": {
+        "id": "592190852180529081",
+        "type": "TIME"
+      },
+      "10": {
+        "id": "1521785218526",
+        "type": "COUNT"
+      }
+    }
+  }
+}
+
+
+{
+  "state": {
+    "reported": {
+      "0": {
+        "id": null,
+        "type": null
+      },
+      "1": {
+        "id": null,
+        "type": null
+      },
+      "2": {
+        "id": null,
+        "type": null
+      },
+      "3": {
+        "id": null,
+        "type": null
+      },
+      "4": {
+        "id": null,
+        "type": null
+      },
+      "5": {
+        "id": null,
+        "type": null
+      },
+      "6": {
+        "id": null,
+        "type": null
+      },
+      "7": {
+        "id": null,
+        "type": null
+      },
+      "8": {
+        "id": null,
+        "type": null
+      },
+      "9": {
+        "id": null,
+        "type": null
+      },
+      "10": {
+        "id": null,
+        "type": null
+      },
+      "uptime": null,
+      "accelX": null,
+      "accelY": null,
+      "accelZ": null,
+      "correct_side": null,
+      "count": null
+    }
+  }
+}
+
+{
+  "state": {
+    "reported": 
+      null 
+  }
+}
+
+{
+  "version": 11940,
+  "state": {
+    "reported": {
+    "0": {
+      "id": "41242421",
+      "type": "TIME"
+    },
+    "1": {
+      "id": "52052915168684",
+      "type": "TIME"
+    },
+    "2": {
+      "id": "52052915168685",
+      "type": "TIME"
+    },
+    "3": {
+      "id": "52005252",
+      "type": "COUNT"
+    },
+    "4": {
+      "id": "9527528242",
+      "type": "COUNT"
+    },
+    "5": {
+      "id": "1521785218522",
+      "type": "COUNT"
+    },
+    "6": {
+      "id": "1521785218523",
+      "type": "COUNT"
+    },
+    "7": {
+      "id": "1521785218524",
+      "type": "COUNT"
+    },
+    "8": {
+      "id": "1521785218525",
+      "type": "COUNT"
+    },
+    "9": {
+      "id": "592190852180529081",
+      "type": "TIME"
+    },
+    "10": {
+      "id": "1521785218526",
+      "type": "COUNT"
+    }
+  }
+  }
+}
+
+
+{
+  "state": {
+    "desired": {
+      "3": {
+        "id": "2424224242",
+        "type": "COUNT"
+      },
+      "5": {
+        "id": "929492422",
+        "type": "COUNT"
+      },
+      "9": {
+        "id": "100001132",
+        "type": "TIME"
+      }
+    }
+  }
+}
