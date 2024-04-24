@@ -57,6 +57,34 @@ static struct gpio_callback button_cb_data;
 
 typedef struct settings_data Settings_data; 
 
+char *id_str;
+
+struct side_item *side_items[MAX_SIDES];
+
+int payload_side_count = 0;
+
+
+uint16_t config_version;
+
+// Settings handling for config version
+int config_version_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg)
+{
+	if (len != sizeof(config_version)) {
+		return -EINVAL;
+	}
+
+	int rc = read_cb(cb_arg, &config_version, sizeof(config_version));
+	if (rc >= 0) {
+		return 0;
+	}
+	return rc;
+}
+
+struct settings_handler config_version_conf = {
+	.name = "config_version",
+	.h_set = config_version_set,
+};
+
 #include "../ext_sensors/ext_sensors.h"
 
 /* Register log module */
@@ -274,15 +302,13 @@ static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
 	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
-	/* Fetch and send sensor data */
-	// fetch_accels(sensor);
+	// TODO: Send side config settings to AWS
 	struct payload payload = {
-		.state.reported.uptime = k_uptime_get(),
-		.state.reported.count = occurrence_count,
+		.version = config_version,
+		.state.reported.count = payload_side_count,
+		.state.reported.side_items = side_items,
 	}; 
 
-	//set counter to 0
-	occurrence_count = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
@@ -452,6 +478,7 @@ static void save_side_config(int side, Settings_data side_settings){
 	char name[20];
 	
 	sprintf(name, "side_%d/id", side);
+	printk("Saving side_%d/id: %s\n", side, side_settings.id);
 	int ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
 
 	if (ret) {
@@ -459,10 +486,18 @@ static void save_side_config(int side, Settings_data side_settings){
 	} 
 
 	sprintf(name, "side_%d/type", side);
+	printk("Saving side_%d/type: %s\n", side, side_settings.type);
 	ret = settings_save_one(name, &side_settings.type, sizeof(side_settings.type));
 	if (ret) {
 		printk("Error saving side_%d/type: %d\n", side, ret);
 	} 
+	printk("Saved side_%d\n", side);
+	printk("Saved side_%d/id: %s\n", side, side_settings.id);
+	printk("Saved side_%d/type: %s\n", side, side_settings.type);
+	// Iterate over id string and print each char individually
+	for (int i = 0; i < strlen(side_settings.id); i++) {
+		printk("Char %d: %c\n", i, side_settings.id[i]);
+	}
 }
 
 static int start_settings_subsystem(){
@@ -478,6 +513,11 @@ static int start_settings_subsystem(){
 			return err;
 		}
 	}
+	err = settings_register(&config_version_conf);
+	if (err) {
+		printk("Error registering settings for config_version: %d\n", err);
+		return err;
+		}
 	err = settings_load();
 	if (err) {
 		printk("Error loading settings: %d\n", err);
@@ -488,6 +528,7 @@ static int start_settings_subsystem(){
 }
 
 static void parse_config_json(const char *json){
+	printk("Parsing JSON\n");
     cJSON *root = cJSON_Parse(json);
     if (root == NULL) {
         const char *error_ptr = cJSON_GetErrorPtr();
@@ -513,6 +554,12 @@ static void parse_config_json(const char *json){
 		printk("Timestamp is not a number\n");
 	}
 
+	// Empty side items
+	for (int i = 0; i < MAX_SIDES; i++) {
+		side_items[i] = NULL;
+	}
+	payload_side_count = 0;
+
     // Get state
     cJSON *state = cJSON_GetObjectItem(root, "state");
     if (state != NULL) {
@@ -529,8 +576,12 @@ static void parse_config_json(const char *json){
             // Create Settings_data and save it
             Settings_data side_settings_from_json;
             if (id != NULL && cJSON_IsString(id)) {
-                side_settings_from_json.id = id->valuestring;
+				
+				// Duplicate id string 
+				id_str = strdup(id->valuestring);
+                side_settings_from_json.id = id_str;
 				printk("Id: %s\n", side_settings_from_json.id);
+
 				if (type != NULL && cJSON_IsString(type)) {
                 if (strcmp(type->valuestring, "TIME") == 0) {
                     side_settings_from_json.type = "TIME";
@@ -543,16 +594,60 @@ static void parse_config_json(const char *json){
 				}
 				printk("Type: %s\n", side_settings_from_json.type);
 				save_side_config(side, side_settings_from_json);
+				side_items[side] = &side_settings_from_json;
+				payload_side_count++;
             } else {
 				printk("Throwing away side config due to invalid id or type\n");
 			}
 		
         }
+		
     } else {
         printk("State is not an object\n");
     }
+	config_version = version->valueint;
+	settings_save_one("config_version", &config_version, sizeof(config_version));;
 
-    cJSON_Delete(root);
+	// Print json
+	char *out = cJSON_Print(root);
+	printk("Parsed JSON: %s\n", out);
+
+	// Duplicate contents of state to reported
+	cJSON *reported = cJSON_Duplicate(state, 1);
+	cJSON *state_reported = cJSON_CreateObject();
+	cJSON_AddItemToObject(state_reported, "reported", reported);
+	cJSON_ReplaceItemInObject(root, "state", state_reported);
+
+	// Delete metadata and timestamp
+	cJSON_DeleteItemFromObject(root, "metadata");
+	cJSON_DeleteItemFromObject(root, "timestamp");
+
+	// Print json
+	out = cJSON_Print(root);
+	printk("Parsed JSON: %s\n", out);
+
+	// Send the modified json to aws without using k_work_reschedule
+
+	struct aws_iot_data tx_data = {
+		.qos = MQTT_QOS_0_AT_MOST_ONCE,
+		.topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
+	};
+
+	tx_data.ptr = out;
+	tx_data.len = strlen(out);
+
+	LOG_INF("Publishing message: %s to AWS IoT shadow", out);
+
+	int err = aws_iot_send(&tx_data);
+	if (err) {
+		LOG_ERR("aws_iot_send, error: %d", err);
+		FATAL_ERROR();
+		return;
+	}
+
+	// Free json
+	cJSON_free(out);
+	cJSON_Delete(root);
 }
 
 /* Event handlers */
@@ -724,6 +819,12 @@ int main(void)
 		return err;
 	}
 
+	// Print all loaded settings
+	for (int i = 0; i < MAX_SIDES; i++) {
+		printk("Side %d id: %s\n", i, side_settings[i]->id);
+		printk("Side %d type: %s\n", i, side_settings[i]->type);
+	}
+
 	// start the aws iot sample
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
@@ -768,6 +869,14 @@ int main(void)
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
 	}	
-    
+
+	Settings_data test_settings_data;
+	
+	test_settings_data.id = "test242424";
+	test_settings_data.type = "TIME";
+
+	save_side_config(7, test_settings_data);
+
+
     return 0;
 }

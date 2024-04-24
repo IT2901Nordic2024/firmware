@@ -1,7 +1,7 @@
 #include "settings_defs.h"
 #include <errno.h>
 
-#define DEFAULT_TYPE_VALUE 0
+#define DEFAULT_TYPE_VALUE ""
 
 struct settings_data side_0_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
 struct settings_data side_1_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };

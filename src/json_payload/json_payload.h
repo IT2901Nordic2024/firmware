@@ -7,14 +7,21 @@
 #include <zephyr/types.h>
 
 /* Structure used to populate and describe the JSON payload sent to AWS IoT. */
-struct payload {
-	struct {
-		struct {
-			uint32_t uptime;
-			int count;
-		} reported;
-	} state;
+struct side_item {
+    char *id;
+    char *type;
 };
+
+struct payload {
+	uint16_t version;
+    struct {
+        struct {
+            struct side_item *side_items[11];
+            size_t count;
+        } reported;
+    } state;
+};
+
 
 /* @brief Construct a JSON message string.
  *

@@ -8,7 +8,7 @@
 
 struct settings_data {
     char *id;
-    int32_t type;
+    char *type;
 };
 
 extern struct settings_data side_0_settings;
