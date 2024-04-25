@@ -47,8 +47,8 @@
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
 #error "Unsupported board: sw0 devicetree alias is not defined"
 #endif
-/*static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
-static struct gpio_callback button_cb_data;*/
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
+static struct gpio_callback button_cb_data;
 
 typedef struct settings_data Settings_data;
 
@@ -501,7 +501,7 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin); */
 
 	/* Start to check the position */
-	// check_position();
+	check_position();
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -792,7 +792,6 @@ int main(void)
 		}
 	*/
 	/* init the aws connection */
-	int err;
 
 	/* Setup handler for Zephyr NET Connection Manager events. */
 	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
