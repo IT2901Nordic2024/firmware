@@ -757,7 +757,7 @@ static int init_button()
 int main(void)
 {
 	/* set side and create new side function to detect change */
-	// side = get_side(sensor);
+	side = get_side(sensor);
 
 	int ret;
 	// initialize led function
