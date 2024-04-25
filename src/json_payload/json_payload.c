@@ -21,8 +21,10 @@ int json_payload_construct(char *message, size_t size, struct payload *payload)
 					  state.reported.uptime, JSON_TOK_NUMBER),
 		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "count",
 					  state.reported.count, JSON_TOK_NUMBER),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "time",
-						state.reported.time, JSON_TOK_NUMBER),
+		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "start_time",
+						state.reported.start_time, JSON_TOK_NUMBER),
+		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "stop_time",
+						state.reported.stop_time, JSON_TOK_NUMBER),
 	};
 	const struct json_obj_descr reported[] = {
 		JSON_OBJ_DESCR_OBJECT_NAMED(struct payload, "reported", state.reported,

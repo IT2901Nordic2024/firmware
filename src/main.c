@@ -23,7 +23,9 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/drivers/sensor.h>
-#include "ext_sensors.h"
+#include <ext_sensors.h>
+
+#include <date_time.h>
 
 /* button */
 #define SW0_NODE	DT_ALIAS(sw0)
@@ -74,8 +76,9 @@ char accelZ[10];
 int occurrence_count = 0;
 
 /* time variables */
-uint32_t start_time;
-uint32_t time = 0;
+int64_t unix_time;
+int64_t start_time;
+int64_t stop_time;
 
 /* LED */
 #define LED0_NODE DT_ALIAS(led0)
@@ -182,7 +185,6 @@ static int get_side(const struct device *dev)
 	//printk("Value of z: %f\n", sensor_value_to_double(&accel[2]));
 	if (sensor_value_to_double(&accel[2]) > 0) {
 		//printk("Side: 1\n");
-		printk("Elapsed time: %lld ms\n", k_uptime_get() - start_time);
 		return 1;
 	}
 	else {
@@ -267,11 +269,14 @@ static void shadow_update_work_fn(struct k_work *work)
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
 		.state.reported.count = occurrence_count,
-		.state.reported.time = time,
+		.state.reported.start_time = start_time,
+		.state.reported.stop_time = stop_time,
 	}; 
 
 	//set counter to 0
 	occurrence_count = 0;
+	start_time = 0;
+	stop_time = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
@@ -329,22 +334,25 @@ static void event_trigger()
 static void check_position(void) {
    while (true) {
         newSide = get_side(sensor);
-				/* if side is changed to side start timer */
-				/* else stop timer and send event trigger*/
+				/* if side is changed set start_time and send event trigger */
+				/* else set stop_time and send event trigger*/
         if (side != 0 && side != newSide) {
 					side = newSide;
 					if (side == 1) {
+						date_time_now(&unix_time);
 						printk("Starting timer\n");
-						start_time = k_uptime_get();
+						start_time = unix_time;
+						event_trigger();
 					}
 					else {
 						printk("Stopping timer\n");
-						time = k_uptime_get() - start_time;
+						date_time_now(&unix_time);
+						stop_time = unix_time;
             event_trigger();
 					}
         }
-				/* sleep for 2 seconds */
-        k_msleep(2000);
+				/* sleep for 1 seconds */
+        k_msleep(1000);
     }
 }
 
