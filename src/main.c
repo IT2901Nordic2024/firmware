@@ -44,17 +44,15 @@
 #include <pb_encode.h>
 #include <pb_decode.h>
 
-
 /* button */
-#define SW0_NODE	DT_ALIAS(sw0)
+#define SW0_NODE DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
 #error "Unsupported board: sw0 devicetree alias is not defined"
 #endif
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
-							      {0});
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
 static struct gpio_callback button_cb_data;
 
-typedef struct settings_data Settings_data; 
+typedef struct settings_data Settings_data;
 
 #include "../ext_sensors/ext_sensors.h"
 
@@ -75,9 +73,9 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 
 /* additional definitions */
 
-/* 
-* Sensor variables
-*/
+/*
+ * Sensor variables
+ */
 /* Sensor device */
 static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
 /* Sensor channels */
@@ -106,8 +104,9 @@ int64_t stop_time;
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
 /* Side of the device for sending based on rotation */
-int side;
+int side = 0;
 int newSide;
+int correct_side;
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -117,7 +116,7 @@ static struct net_mgmt_event_callback conn_cb;
 static void shadow_update_work_fn(struct k_work *work);
 static void connect_work_fn(struct k_work *work);
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
-static void check_position(void);
+static void check_position();
 static void turn_led_off(struct k_work *work);
 
 /* Work items used to control some aspects of the sample. */
@@ -125,29 +124,29 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
 
-/* Thread for checking the position of the device */
-static K_THREAD_DEFINE(check_pos_thread, 2048, check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0);
+/* Start thread for checking the position of the device */
+K_THREAD_STACK_DEFINE(stack_area, 2048);
+struct k_thread check_pos_data;
 
 
 /* Static functions */
 static void turn_led_off(struct k_work *work)
 {
-    gpio_pin_set_dt(&led, 0); // Assuming "0" turns the LED off.
+	gpio_pin_set_dt(&led, 0); // Assuming "0" turns the LED off.
 }
 
 static int fetch_accels(const struct device *dev)
 {
 	/*
-	*	Fetch sensor data from the accelerometer sensor
-	*	saves and prints the sensor data as string to be sent to AWS IoT
-	*/
+	 *	Fetch sensor data from the accelerometer sensor
+	 *	saves and prints the sensor data as string to be sent to AWS IoT
+	 */
 	int ret;
 	/*	Check if device is ready, if not return 0	*/
 	if (!device_is_ready(dev)) {
 		printk("sensor: device not ready.\n");
 		return 0;
-	}
-	else {
+	} else {
 		printk("sensor: device ready.\n");
 	}
 
@@ -168,50 +167,156 @@ static int fetch_accels(const struct device *dev)
 	snprintf(accelX, sizeof(accelX), "%f", sensor_value_to_double(&accel[0]));
 	snprintf(accelY, sizeof(accelY), "%f", sensor_value_to_double(&accel[1]));
 	snprintf(accelZ, sizeof(accelZ), "%f", sensor_value_to_double(&accel[2]));
-	// printf("Value of X: %s\n", accelX);
-	// printf("Value of Y: %s\n", accelY);
-	// printf("Value of Z: %s\n", accelZ);
+
 	return 0;
+}
+
+double Xaccel[10] = {};
+double Yaccel[10] = {};
+double Zaccel[10] = {};
+
+double medianX;
+double medianY;
+double medianZ;
+
+/*Config for each side*/
+
+struct each_side {
+	double accelX;
+	double accelY;
+	double accelZ;
+};
+
+/*Normal vectors for each side*/
+struct each_side normal_vectors[12] = {
+	{-0.003696148, -0.069007951, -0.996817534}, // side 0
+	{0.879237385, -0.308156155, -0.361714449},  // side 1
+	{-0.024281719, -0.90438758, -0.422177015},  // side 2
+	{-0.884967095, -0.232578156, -0.400957651}, // side 3
+	{-0.553576905, 0.735285768, -0.389626839},  // side 4
+	{0.525613609, 0.741611336, -0.415332151},   // side 5
+	{-0.541858156, -0.691422294, 0.476691277},  // side 6
+	{0.475564405, -0.757096215, 0.442519528},   // side 7
+	{0.810239622, 0.211181093, 0.540259636},    // side 8
+	{-0.031841904, 0.852591043, 0.519405125},   // side 9
+	{-0.857683398, 0.311294211, 0.408629604},   // side 10
+	{0.005361934, -0.033163197, 0.995770246},   // side 11
+};
+
+int compare(const void *a, const void *b)
+{
+	double *double_a = (double *)a;
+	double *double_b = (double *)b;
+	// Compare the doubles
+	if (&double_a < &double_b) {
+		return -1; // Return a negative value if a should appear before b
+	} else if (&double_a > &double_b) {
+		return 1; // Return a positive value if a should appear after b
+	} else {
+		return 0; // Return 0 if a and b are equal
+	}
+}
+
+/* Function to calculate median*/
+double calculate_median(double accel[], int array_size)
+{
+	// sort list
+	qsort(accel, array_size, sizeof(int), compare);
+
+	// find median
+	if (array_size % 2 == 0) {
+		return (accel[array_size / 2 - 1] + accel[array_size / 2]) / 2.0;
+	} else {
+		return accel[array_size / 2];
+	}
+}
+
+/*Calculate dot product of two vectors*/
+double vector_dot_product(double vector1[], double vector2[])
+{
+	return vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector2[2];
+}
+
+/*Returns what side is up on the dodd*/
+int find_what_side(struct each_side sides[], int number_of_sides)
+{
+
+	double median_vector[3] = {medianX, medianY, medianZ};
+
+	double delta = 2;
+
+	for (size_t i = 0; i < number_of_sides; i++) {
+
+		double normal_vector[3] = {sides[i].accelX, sides[i].accelY, sides[i].accelZ};
+
+		double normal_acc = vector_dot_product(normal_vector, median_vector);
+
+		if (normal_acc > 9.81 - delta) {
+			return i;
+		}
+	}
+
+	return -1; // error if valus are not in range
+}
+
+/*help values to store double values to send to aws*/
+char median_values_X[10];
+char median_values_Y[10];
+char median_values_Z[10];
+
+/*Use a median filter to remove noise from accel values*/
+void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
+{
+	int ret;
+
+	int count = 0;
+
+	while (count < number_of_samples) {
+		ret = sensor_sample_fetch(dev);
+		if (ret < 0) {
+			printk("sensor_sample_fetch() failed: %d\n", ret);
+		}
+		for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
+			ret = sensor_channel_get(dev, channels[i], &accel[i]);
+			if (ret < 0) {
+				printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
+			}
+		}
+
+		Xaccel[count] = sensor_value_to_double(&accel[0]);
+		Yaccel[count] = sensor_value_to_double(&accel[1]);
+		Zaccel[count] = sensor_value_to_double(&accel[2]);
+
+		count++;
+		k_msleep(ms);
+	}
+
+	medianX = calculate_median(Xaccel, number_of_samples);
+	medianY = calculate_median(Yaccel, number_of_samples);
+	medianZ = calculate_median(Zaccel, number_of_samples);
+
+	snprintf(median_values_X, sizeof(median_values_X), "%f", medianX);
+	snprintf(median_values_Y, sizeof(median_values_Y), "%f", medianY);
+	snprintf(median_values_Z, sizeof(median_values_Z), "%f", medianZ);
 }
 
 static int get_side(const struct device *dev)
 {
-	/*
-	* Fetch sensor data from the accelerometer sensor
-	* and return the side of the device based on the z-axis
-	* 1 for up and -1 for down
-	*/
-	int ret;
-	/*	Check if device is ready, if not return 0	*/
+
+	//	Check if device is ready, if not return 0
 	if (!device_is_ready(dev)) {
 		printk("sensor: device not ready.\n");
 		return 0;
 	}
 
-	ret = sensor_sample_fetch(dev);
-	if (ret < 0) {
-		printk("sensor_sample_fetch() failed: %d\n", ret);
-		return ret;
-	}
+	// apply median filter to accel values
+	sampling_filter(10, dev, 100);
 
-	/* Get sensor data */
-	for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
-		ret = sensor_channel_get(dev, channels[i], &accel[i]);
-		if (ret < 0) {
-			printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
-			return ret;
-		}
-	}
+	// find what side is up
+	correct_side = find_what_side(normal_vectors, 12);
 
-	//printk("Value of z: %f\n", sensor_value_to_double(&accel[2]));
-	if (sensor_value_to_double(&accel[2]) > 0) {
-		//printk("Side: 1\n");
-		return 1;
-	}
-	else {
-		//printk("Side: -1\n");
-		return -1;
-	}
+	//printk("Side: %i \n", correct_side);
+	return correct_side;
 }
 
 static int app_topics_subscribe(void)
@@ -284,7 +389,7 @@ static int aws_iot_client_init(void)
 static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
-	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
+	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = {0};
 	/* Fetch and send sensor data */
 	// fetch_accels(sensor);
 	struct payload payload = {
@@ -294,16 +399,16 @@ static void shadow_update_work_fn(struct k_work *work)
 		.state.reported.stop_time = stop_time,
 	}; 
 
-	//set counter to 0
+	// set counter to 0
 	occurrence_count = 0;
 	start_time = 0;
 	stop_time = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
-			LOG_ERR("json_payload_construct, error: %d", err);
-			FATAL_ERROR();
-			return;
+		LOG_ERR("json_payload_construct, error: %d", err);
+		FATAL_ERROR();
+		return;
 	}
 
 	struct aws_iot_data tx_data = {
@@ -372,31 +477,49 @@ static void impact_handler(const struct ext_sensor_evt *const evt)
 static void start_timer()
 {
 	//start_time and send event trigger
-	date_time_now(&unix_time);
-	printk("Starting timer\n");
-	start_time = unix_time;
-	gpio_pin_set_dt(&led, 1);
-	event_trigger();
+	int ret;
+	ret = date_time_now(&unix_time);
+	//checks if time is updated else try again
+	if (ret == 0) {
+		printk("Starting timer\n");
+		start_time = unix_time;
+		gpio_pin_set_dt(&led, 1);
+		event_trigger();
+	}
+	else {
+		LOG_ERR("Error getting time");
+		k_msleep(2000);
+		start_timer();
+	}
 }
 
 static void stop_timer() 
 {
 	//stop_time and send event trigger
-	printk("Stopping timer\n");
-	date_time_now(&unix_time);
-	stop_time = unix_time;
-	k_work_schedule(&led_off_work, K_NO_WAIT);
-	event_trigger();
+	int ret;
+	ret = date_time_now(&unix_time);
+	//checks if time is updated else try again
+	if (ret == 0) {
+		printk("Stopping timer\n");
+		stop_time = unix_time;
+		k_work_schedule(&led_off_work, K_NO_WAIT);
+		event_trigger();
+	}
+	else {
+		LOG_ERR("Error getting time");
+		k_msleep(2000);
+		stop_timer();
+	}
 }
 
 
 /* function to check side, runs in separate tread */
-static void check_position(void) {
+static void check_position() {
    while (true) {
         newSide = get_side(sensor);
 				/* if side is changed start timer */
 				/* else stop timer*/
-        if (side != 0 && side != newSide) {
+        if (newSide != -1 && side != newSide) {
 					side = newSide;
 					// if side is not default
 					if (side == 1) {
@@ -449,16 +572,13 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 	gpio_init_callback(&button_cb_data, event_trigger, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
 	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
-
-	/* Start to check the position */
-	k_thread_start(check_pos_thread);
 }
 
 static void on_aws_iot_evt_disconnected(void)
 {
-	/* Remove button callback */
+	/* Remove button callback
 	gpio_remove_callback(button.port, &button_cb_data);
-	printk("Button at %s pin %d has been deactivated\n", button.port->name, button.pin);
+	printk("Button at %s pin %d has been deactivated\n", button.port->name, button.pin); */
 	(void)k_work_cancel_delayable(&shadow_update_work);
 	(void)k_work_reschedule(&connect_work, K_SECONDS(5));
 }
@@ -511,29 +631,32 @@ static void on_net_event_l4_disconnected(void)
 	(void)k_work_cancel_delayable(&shadow_update_work);
 }
 
-static void save_side_config(int side, Settings_data side_settings){
+static void save_side_config(int side, Settings_data side_settings)
+{
 	char name[20];
 	sprintf(name, "side_%d/timestamp", side);
-	int ret = settings_save_one(name, &side_settings.timestamp, sizeof(side_settings.timestamp));
+	int ret =
+		settings_save_one(name, &side_settings.timestamp, sizeof(side_settings.timestamp));
 	if (ret) {
 		printk("Error saving side_%d/timestamp: %d\n", side, ret);
-	} 
+	}
 
 	sprintf(name, "side_%d/id", side);
 	ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
 
 	if (ret) {
 		printk("Error saving side_%d/id: %d\n", side, ret);
-	} 
+	}
 
 	sprintf(name, "side_%d/type", side);
 	ret = settings_save_one(name, &side_settings.type, sizeof(side_settings.type));
 	if (ret) {
 		printk("Error saving side_%d/type: %d\n", side, ret);
-	} 
+	}
 }
 
-static int start_settings_subsystem(){
+static int start_settings_subsystem()
+{
 	int err = settings_subsys_init();
 	if (err) {
 		printk("Error initializing settings subsystem: %d\n", err);
@@ -552,7 +675,6 @@ static int start_settings_subsystem(){
 		return err;
 	}
 	return 0;
-
 }
 
 /* Event handlers */
@@ -569,6 +691,8 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_READY:
 		LOG_INF("AWS_IOT_EVT_READY");
+		/* Start to check the position */
+		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area), check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
@@ -576,7 +700,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_DATA_RECEIVED:
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
-		//save_config(evt->data.msg.topic.str, sizeof(evt->data.msg.topic.str));
+		// save_config(evt->data.msg.topic.str, sizeof(evt->data.msg.topic.str));
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
 		break;
@@ -661,17 +785,23 @@ static int init_button()
 {
 	int ret;
 	/* init button, when button is pressed call function button-pressed */
+	// Initialize impact sensor with a handler function.
+	ret = ext_sensors_init(impact_handler);
+	if (ret) {
+		printf("Error initializing sensors: %d\n", ret);
+		return ret;
+	}
+
 	// inititilize button with interruption event
 	if (!gpio_is_ready_dt(&button)) {
-		printk("Error: button device %s is not ready\n",
-		       button.port->name);
+		printk("Error: button device %s is not ready\n", button.port->name);
 		return 0;
 	}
 
 	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
 	if (ret != 0) {
-		printk("Error %d: failed to configure interrupt on %s pin %d\n",
-			ret, button.port->name, button.pin);
+		printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
+		       button.port->name, button.pin);
 		return 0;
 	}
 	return ret;
@@ -679,10 +809,7 @@ static int init_button()
 
 
 int main(void)
-{	
-	/* set side and create new side function to detect change */
-	side = get_side(sensor);
-
+{
 	int ret;
 	// initialize led function
 	ret = init_led();
@@ -706,12 +833,22 @@ int main(void)
 	// start the aws iot sample
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
-	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, button.port->name, button.pin);
-		return 0;
-	}
+	/*
+		ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+		if (ret != 0) {
+			printk("Error %d: failed to configure %s pin %d\n", ret, button.port->name,
+			       button.pin);
+			return 0;
+		}*/
+	/*
+		ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+		if (ret != 0) {
+			printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
+			       button.port->name, button.pin);
+			return 0;
+		}
+	*/
+	/* init the aws connection */
 
 	/* Setup handler for Zephyr NET Connection Manager events. */
 	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
@@ -723,7 +860,7 @@ int main(void)
 
 	/* Connecting to the configured connectivity layer. */
 	LOG_INF("Bringing network interface up and connecting to the network");
-    
+
 	err = conn_mgr_all_if_up(true);
 	if (err) {
 		LOG_ERR("conn_mgr_all_if_up, error: %d", err);
@@ -746,7 +883,7 @@ int main(void)
 	 */
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
-	}	
-    
-    return 0;
+	}
+
+	return 0;
 }

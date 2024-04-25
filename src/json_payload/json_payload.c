@@ -27,8 +27,7 @@ int json_payload_construct(char *message, size_t size, struct payload *payload)
 						state.reported.stop_time, JSON_TOK_NUMBER),
 	};
 	const struct json_obj_descr reported[] = {
-		JSON_OBJ_DESCR_OBJECT_NAMED(struct payload, "reported", state.reported,
-					    parameters),
+		JSON_OBJ_DESCR_OBJECT_NAMED(struct payload, "reported", state.reported, parameters),
 	};
 	const struct json_obj_descr root[] = {
 		JSON_OBJ_DESCR_OBJECT(struct payload, state, reported),
