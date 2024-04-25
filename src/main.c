@@ -203,7 +203,7 @@ int find_what_side(struct each_side sides[], int number_of_sides)
 	double delta = 2;
 
 	for (size_t i = 0; i < number_of_sides; i++) {
-		struct each_side side = sides[i];
+
 		double normal_vector[3] = {sides[i].accelX, sides[i].accelY, sides[i].accelZ};
 
 		double normal_acc = vector_dot_product(normal_vector, median_vector);
