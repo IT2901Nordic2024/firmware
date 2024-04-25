@@ -94,6 +94,7 @@ char accelZ[10];
 
 /* counter variables */
 int occurrence_count = 0;
+bool counter_active = true;
 
 /* time variables */
 int64_t unix_time;
@@ -350,6 +351,24 @@ static void event_trigger()
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
+static void impact_handler(const struct ext_sensor_evt *const evt)
+{
+	switch (evt->type) {
+			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
+					if (counter_active) {
+						printf("Impact detected: %6.2f g\n", evt->value);
+						// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
+						(void)k_work_cancel_delayable(&shadow_update_work);
+						occurrence_count ++;
+						gpio_pin_set_dt(&led, 1);
+						k_work_schedule(&led_off_work, K_SECONDS(0.2));
+						(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
+					}
+			default:
+					break;
+	}
+}
+
 static void start_timer()
 {
 	//start_time and send event trigger
@@ -381,9 +400,11 @@ static void check_position(void) {
 					side = newSide;
 					// if side is not default
 					if (side == 1) {
+						counter_active = false;
 						start_timer();
 					}
 					else {
+						counter_active = true;
 						stop_timer();
 					}
         }
@@ -621,23 +642,6 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 	}
 }
 
-static void impact_handler(const struct ext_sensor_evt *const evt)
-{
-	switch (evt->type) {
-			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
-					printf("Impact detected: %6.2f g\n", evt->value);
-					// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
-					(void)k_work_cancel_delayable(&shadow_update_work);
-					occurrence_count ++;
-					gpio_pin_set_dt(&led, 1);
-					k_work_schedule(&led_off_work, K_SECONDS(0.2));
-					(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
-					
-			default:
-					break;
-	}
-}
-
 static int init_led()
 {
 	int ret;
@@ -657,13 +661,6 @@ static int init_button()
 {
 	int ret;
 	/* init button, when button is pressed call function button-pressed */
-	// Initialize impact sensor with a handler function.
-	ret = ext_sensors_init(impact_handler);
-	if (ret) {
-			printf("Error initializing sensors: %d\n", ret);
-			return ret;
-	}
-
 	// inititilize button with interruption event
 	if (!gpio_is_ready_dt(&button)) {
 		printk("Error: button device %s is not ready\n",
@@ -691,6 +688,12 @@ int main(void)
 	ret = init_led();
 	// initialize button function
 	ret = init_button();
+
+	ret = ext_sensors_init(impact_handler);
+	if (ret) {
+			printf("Error initializing sensors: %d\n", ret);
+			return ret;
+	}
 
 	int err;
 	err = start_settings_subsystem();
