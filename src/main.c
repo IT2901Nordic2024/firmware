@@ -17,6 +17,7 @@
 #include <hw_id.h>
 #include <modem/modem_info.h>
 #include "json_payload.h"
+#include "settings_defs.h"
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -27,6 +28,23 @@
 
 #include <date_time.h>
 
+/*Settings and NVS*/
+#include <zephyr/settings/settings.h>
+#include <zephyr/fs/nvs.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
+#include <zephyr/device.h>
+#include <string.h>
+#include <inttypes.h>
+#include <zephyr/sys/printk.h>
+
+/*Protobuf*/
+#include <pb.h>
+#include <pb_common.h>
+#include <pb_encode.h>
+#include <pb_decode.h>
+
+
 /* button */
 #define SW0_NODE	DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
@@ -35,6 +53,8 @@
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
 							      {0});
 static struct gpio_callback button_cb_data;
+
+typedef struct settings_data Settings_data; 
 
 #include "../ext_sensors/ext_sensors.h"
 
@@ -454,6 +474,50 @@ static void on_net_event_l4_disconnected(void)
 	(void)k_work_cancel_delayable(&shadow_update_work);
 }
 
+static void save_side_config(int side, Settings_data side_settings){
+	char name[20];
+	sprintf(name, "side_%d/timestamp", side);
+	int ret = settings_save_one(name, &side_settings.timestamp, sizeof(side_settings.timestamp));
+	if (ret) {
+		printk("Error saving side_%d/timestamp: %d\n", side, ret);
+	} 
+
+	sprintf(name, "side_%d/id", side);
+	ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
+
+	if (ret) {
+		printk("Error saving side_%d/id: %d\n", side, ret);
+	} 
+
+	sprintf(name, "side_%d/type", side);
+	ret = settings_save_one(name, &side_settings.type, sizeof(side_settings.type));
+	if (ret) {
+		printk("Error saving side_%d/type: %d\n", side, ret);
+	} 
+}
+
+static int start_settings_subsystem(){
+	int err = settings_subsys_init();
+	if (err) {
+		printk("Error initializing settings subsystem: %d\n", err);
+		return err;
+	}
+	for (int i = 0; i < MAX_SIDES; i++) {
+		err = settings_register(side_confs[i]);
+		if (err) {
+			printk("Error registering settings for side %d: %d\n", i, err);
+			return err;
+		}
+	}
+	err = settings_load();
+	if (err) {
+		printk("Error loading settings: %d\n", err);
+		return err;
+	}
+	return 0;
+
+}
+
 /* Event handlers */
 
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
@@ -475,7 +539,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_DATA_RECEIVED:
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
-
+		//save_config(evt->data.msg.topic.str, sizeof(evt->data.msg.topic.str));
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
 		break;
@@ -613,6 +677,12 @@ int main(void)
 	ret = init_button();
 
 	int err;
+	err = start_settings_subsystem();
+	if (err) {
+		LOG_ERR("Error starting settings subsystem: %d", err);
+		FATAL_ERROR();
+		return err;
+	}
 
 	// start the aws iot sample
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
@@ -634,7 +704,7 @@ int main(void)
 
 	/* Connecting to the configured connectivity layer. */
 	LOG_INF("Bringing network interface up and connecting to the network");
-
+    
 	err = conn_mgr_all_if_up(true);
 	if (err) {
 		LOG_ERR("conn_mgr_all_if_up, error: %d", err);
@@ -657,7 +727,7 @@ int main(void)
 	 */
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
-	}
-
-	return 0;
+	}	
+    
+    return 0;
 }
