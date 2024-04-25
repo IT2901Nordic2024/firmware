@@ -108,6 +108,21 @@ int side = 0;
 int newSide;
 int correct_side;
 
+// 0 is default, 1 is count, 2 is timer
+int side_0 = 2;
+int side_1 = 1;
+int side_2 = 2;
+int side_3 = 1;
+int side_4 = 2;
+int side_5 = 1;
+int side_6 = 2;
+int side_7 = 1;
+int side_8 = 0;
+int side_9 = 0;
+int side_10 = 0;
+
+
+
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
 static struct net_mgmt_event_callback conn_cb;
@@ -512,6 +527,34 @@ static void stop_timer()
 	}
 }
 
+static int get_side_value(int side) {
+	switch (side) {
+		case 0:
+			return 0;
+		case 1:
+			return side_0;
+		case 2:
+			return side_1;
+		case 3:
+			return side_2;
+		case 4:
+			return side_3;
+		case 5:
+			return side_4;
+		case 6:
+			return side_5;
+		case 7:
+			return side_6;
+		case 8:
+			return side_7;
+		case 9:
+			return side_8;
+		case 10:
+			return side_9;
+		case 11:
+			return side_10;
+	}
+}
 
 /* function to check side, runs in separate tread */
 static void check_position() {
@@ -520,17 +563,22 @@ static void check_position() {
 				/* if side is changed start timer */
 				/* else stop timer*/
         if (newSide != -1 && side != newSide) {
-					side = newSide;
-					// if side is not default
-					if (side == 1) {
+					printk("Side: %d\n", side);
+					if (get_side_value(side) == 1) {
 						counter_active = false;
-						start_timer();
 					}
-					else {
-						counter_active = true;
+					if (get_side_value(side) == 2) {
 						stop_timer();
 					}
+					side = newSide;
+					if (get_side_value(side) == 1) {
+						counter_active = true;
+					}
+					if (get_side_value(side) == 2) {
+						start_timer();
+					}
         }
+				k_msleep(100);
     }
 }
 
