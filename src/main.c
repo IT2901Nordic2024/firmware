@@ -531,8 +531,6 @@ static void check_position() {
 						stop_timer();
 					}
         }
-				/* sleep for 1 seconds */
-        k_msleep(1000);
     }
 }
 
