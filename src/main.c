@@ -362,12 +362,14 @@ static void check_position(void) {
 						date_time_now(&unix_time);
 						printk("Starting timer\n");
 						start_time = unix_time;
+						gpio_pin_set_dt(&led, 1);
 						event_trigger();
 					}
 					else {
 						printk("Stopping timer\n");
 						date_time_now(&unix_time);
 						stop_time = unix_time;
+						k_work_schedule(&led_off_work, K_NO_WAIT);
             event_trigger();
 					}
         }
