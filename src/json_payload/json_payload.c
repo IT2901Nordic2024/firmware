@@ -19,14 +19,8 @@ int json_payload_construct(char *message, size_t size, struct payload *payload)
 	const struct json_obj_descr parameters[] = {
 		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "uptime", state.reported.uptime,
 					  JSON_TOK_NUMBER),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "medianX", state.reported.median_values_X,
-					  JSON_TOK_STRING),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "medianY", state.reported.median_values_Y,
-					  JSON_TOK_STRING),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "medianZ", state.reported.median_values_Z,
-					  JSON_TOK_STRING),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "correct_side",
-					  state.reported.correct_side, JSON_TOK_NUMBER),
+		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "count", state.reported.count,
+					  JSON_TOK_NUMBER),
 	};
 	const struct json_obj_descr reported[] = {
 		JSON_OBJ_DESCR_OBJECT_NAMED(struct payload, "reported", state.reported, parameters),

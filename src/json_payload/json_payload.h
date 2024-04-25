@@ -11,10 +11,7 @@ struct payload {
 	struct {
 		struct {
 			uint32_t uptime;
-			const char *median_values_X;
-			const char *median_values_Y;
-			const char *median_values_Z;
-			int correct_side;
+			int count;
 		} reported;
 	} state;
 };
