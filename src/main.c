@@ -444,9 +444,11 @@ static void check_position(void)
 
 		newSide = get_side(sensor);
 		/*if side is changed send event trigger*/
-		if (side != -1 && side != newSide) {
+		if (side != newSide) {
 			side = newSide;
-			event_trigger();
+			if (side != -1){
+				event_trigger();
+			}
 		}
 
 		k_msleep(1000);
