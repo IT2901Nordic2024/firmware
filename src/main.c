@@ -76,8 +76,7 @@ char accelZ[10];
 /* Side of the device for sending based on rotation*/
 int side;
 int newSide;
-double pitch;
-double roll;
+int correct_side;
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -138,14 +137,14 @@ double medianY;
 double medianZ;
 
 /*Config for each side*/
-// struct to represent the range values for each side
+
 struct each_side {
 	double accelX;
 	double accelY;
 	double accelZ;
 };
 
-/*endre til normal vectors len 12*/
+/*Normal vectors for each side*/
 struct each_side normal_vectors[12] = {
 	{-0.003696148, -0.069007951, -0.996817534}, // side 0
 	{0.879237385, -0.308156155, -0.361714449},  // side 1
@@ -175,12 +174,13 @@ int compare(const void *a, const void *b)
 	}
 }
 
-// Function to calculate median
+/* Function to calculate median*/
 double calculate_median(double accel[], int array_size)
 {
-
+	// sort list
 	qsort(accel, array_size, sizeof(int), compare);
 
+	// find median
 	if (array_size % 2 == 0) {
 		return (accel[array_size / 2 - 1] + accel[array_size / 2]) / 2.0;
 	} else {
@@ -188,17 +188,20 @@ double calculate_median(double accel[], int array_size)
 	}
 }
 
+/*Calculate dot product of two vectors*/
 double vector_dot_product(double vector1[], double vector2[])
 {
 	return vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector2[2];
 }
 
+/*Returns what side is up on the dodd*/
 int find_what_side(struct each_side sides[], int number_of_sides)
 {
 
 	double median_vector[3] = {medianX, medianY, medianZ};
 
 	double delta = 2;
+
 	for (size_t i = 0; i < number_of_sides; i++) {
 		struct each_side side = sides[i];
 		double normal_vector[3] = {sides[i].accelX, sides[i].accelY, sides[i].accelZ};
@@ -212,10 +215,13 @@ int find_what_side(struct each_side sides[], int number_of_sides)
 
 	return -1; // error if valus are not in range
 }
+
+/*help values to store double values to send to aws*/
 char median_values_X[10];
 char median_values_Y[10];
 char median_values_Z[10];
 
+/*Use a median filter to remove noise from accel values*/
 void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
 {
 	int ret;
@@ -249,10 +255,8 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 	snprintf(median_values_X, sizeof(median_values_X), "%f", medianX);
 	snprintf(median_values_Y, sizeof(median_values_Y), "%f", medianY);
 	snprintf(median_values_Z, sizeof(median_values_Z), "%f", medianZ);
-
-	double squaresum = sqrt(pow(medianX, 2) + pow(medianY, 2) + pow(medianZ, 2));
 }
-int correct_side = 0;
+
 static int get_side(const struct device *dev)
 {
 
@@ -262,8 +266,10 @@ static int get_side(const struct device *dev)
 		return 0;
 	}
 
+	// apply median filter to accel values
 	sampling_filter(10, dev, 100);
 
+	// find what side is up
 	correct_side = find_what_side(normal_vectors, 12);
 
 	printk("Side: %i \n", correct_side);
@@ -417,7 +423,7 @@ static void check_position(void)
 			side = newSide;
 			event_trigger();
 		}
-		/*endre når finne vektor fordi antall samples øker*/
+
 		k_msleep(1000);
 	}
 }
