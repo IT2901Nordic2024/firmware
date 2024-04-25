@@ -350,27 +350,41 @@ static void event_trigger()
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
+static void start_timer()
+{
+	//start_time and send event trigger
+	date_time_now(&unix_time);
+	printk("Starting timer\n");
+	start_time = unix_time;
+	gpio_pin_set_dt(&led, 1);
+	event_trigger();
+}
+
+static void stop_timer() 
+{
+	//stop_time and send event trigger
+	printk("Stopping timer\n");
+	date_time_now(&unix_time);
+	stop_time = unix_time;
+	k_work_schedule(&led_off_work, K_NO_WAIT);
+	event_trigger();
+}
+
+
 /* function to check side, runs in separate tread */
 static void check_position(void) {
    while (true) {
         newSide = get_side(sensor);
-				/* if side is changed set start_time and send event trigger */
-				/* else set stop_time and send event trigger*/
+				/* if side is changed start timer */
+				/* else stop timer*/
         if (side != 0 && side != newSide) {
 					side = newSide;
+					// if side is not default
 					if (side == 1) {
-						date_time_now(&unix_time);
-						printk("Starting timer\n");
-						start_time = unix_time;
-						gpio_pin_set_dt(&led, 1);
-						event_trigger();
+						start_timer();
 					}
 					else {
-						printk("Stopping timer\n");
-						date_time_now(&unix_time);
-						stop_time = unix_time;
-						k_work_schedule(&led_off_work, K_NO_WAIT);
-            event_trigger();
+						stop_timer();
 					}
         }
 				/* sleep for 1 seconds */
