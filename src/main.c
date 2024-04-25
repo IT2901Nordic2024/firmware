@@ -426,9 +426,6 @@ static void shadow_update_work_fn(struct k_work *work)
 		FATAL_ERROR();
 		return;
 	}
-
-	(void)k_work_reschedule(&shadow_update_work,
-				K_SECONDS(CONFIG_AWS_IOT_SAMPLE_PUBLICATION_INTERVAL_SECONDS));
 }
 
 /* System Workqueue handlers. */
