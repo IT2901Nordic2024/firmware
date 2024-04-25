@@ -18,7 +18,7 @@ config AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX
 
 config AWS_IOT_SAMPLE_PUBLICATION_INTERVAL_SECONDS
 	int "Interval in seconds that the sample will publish data"
-	default 60
+	default 80
 
 config AWS_IOT_SAMPLE_CONNECTION_RETRY_TIMEOUT_SECONDS
 	int "Number of seconds between each AWS IoT connection retry"

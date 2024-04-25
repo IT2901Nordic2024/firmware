@@ -17,14 +17,13 @@ int json_payload_construct(char *message, size_t size, struct payload *payload)
 {
 	int err;
 	const struct json_obj_descr parameters[] = {
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "uptime",
-					  state.reported.uptime, JSON_TOK_NUMBER),
-		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "count",
-					  state.reported.count, JSON_TOK_NUMBER),
+		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "uptime", state.reported.uptime,
+					  JSON_TOK_NUMBER),
+		JSON_OBJ_DESCR_PRIM_NAMED(struct payload, "count", state.reported.count,
+					  JSON_TOK_NUMBER),
 	};
 	const struct json_obj_descr reported[] = {
-		JSON_OBJ_DESCR_OBJECT_NAMED(struct payload, "reported", state.reported,
-					    parameters),
+		JSON_OBJ_DESCR_OBJECT_NAMED(struct payload, "reported", state.reported, parameters),
 	};
 	const struct json_obj_descr root[] = {
 		JSON_OBJ_DESCR_OBJECT(struct payload, state, reported),
