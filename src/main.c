@@ -532,8 +532,6 @@ static void stop_timer()
 // returns the value of the side based on the side number
 static char *get_side_value(int side) {
 	switch (side) {
-		case 0:
-			return "";
 		case 1:
 			return side_0;
 		case 2:
@@ -556,32 +554,35 @@ static char *get_side_value(int side) {
 			return side_9;
 		case 11:
 			return side_10;
+		default:
+			return "";
 	}
 }
 
 /* function to check side, runs in separate tread */
-static void check_position() {
+static void check_position() 
+{
    while (true) {
         newSide = get_side(sensor);
-				printf("Side: %d\n", side);				// if side is changed and the new side is not -1
+				// if side is changed and the new side is not -1
         if (newSide != -1 && side != newSide) {
 					// if the prew side is count stop the count
-					if (get_side_value(side) == "COUNT") {
+					if (strcmp(get_side_value(side), "COUNT") == 0) {
 						counter_active = false;
 					}
 					// if the prew side is time stop the timer
-					if (get_side_value(side) == "TIME") {
+					if (strcmp(get_side_value(side), "TIME") == 0) {
 						stop_timer();
 						k_msleep(100);
 					}
 					// set the new side
 					side = newSide;
 					// if the new side is count start the count
-					if (get_side_value(side) == "COUNT") {
+					if (strcmp(get_side_value(side), "COUNT") == 0) {
 						counter_active = true;
 					}
 					// if the new side is time start the timer
-					if (get_side_value(side) == "TIME") {
+					if (strcmp(get_side_value(side), "TIME") == 0) {
 						start_timer();
 					}
         }
