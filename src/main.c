@@ -92,7 +92,7 @@ char accelZ[10];
 
 /* counter variables */
 int occurrence_count = 0;
-bool counter_active = true;
+bool counter_active = false;
 
 /* time variables */
 int64_t unix_time;
@@ -107,6 +107,21 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 int side = 0;
 int newSide;
 int correct_side;
+
+// temporarly values for sides. "" is default, "COUNT" is count, "TIMER" is timer
+char *side_0 = "TIME";
+char *side_1 = "COUNT";
+char *side_2 = "TIME";
+char *side_3 = "COUNT";
+char *side_4 = "TIME";
+char *side_5 = "COUNT";
+char *side_6 = "TIME";
+char *side_7 = "COUNT";
+char *side_8 = "";
+char *side_9 = "";
+char *side_10 = "";
+
+
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -124,7 +139,7 @@ static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
 
-/* Start thread for checking the position of the device */
+/* Create thread for checking the position of the device */
 K_THREAD_STACK_DEFINE(stack_area, 2048);
 struct k_thread check_pos_data;
 
@@ -132,7 +147,8 @@ struct k_thread check_pos_data;
 /* Static functions */
 static void turn_led_off(struct k_work *work)
 {
-	gpio_pin_set_dt(&led, 0); // Assuming "0" turns the LED off.
+	//turn led off in a work function
+	gpio_pin_set_dt(&led, 0);
 }
 
 static int fetch_accels(const struct device *dev)
@@ -399,7 +415,7 @@ static void shadow_update_work_fn(struct k_work *work)
 		.state.reported.stop_time = stop_time,
 	}; 
 
-	// set counter to 0
+	// set values to 0
 	occurrence_count = 0;
 	start_time = 0;
 	stop_time = 0;
@@ -460,6 +476,7 @@ static void impact_handler(const struct ext_sensor_evt *const evt)
 {
 	switch (evt->type) {
 			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
+					// if counter is active run the impact handler
 					if (counter_active) {
 						printf("Impact detected: %6.2f g\n", evt->value);
 						// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
@@ -512,27 +529,63 @@ static void stop_timer()
 	}
 }
 
+// returns the value of the side based on the side number
+static char *get_side_value(int side) {
+	switch (side) {
+		case 1:
+			return side_0;
+		case 2:
+			return side_1;
+		case 3:
+			return side_2;
+		case 4:
+			return side_3;
+		case 5:
+			return side_4;
+		case 6:
+			return side_5;
+		case 7:
+			return side_6;
+		case 8:
+			return side_7;
+		case 9:
+			return side_8;
+		case 10:
+			return side_9;
+		case 11:
+			return side_10;
+		default:
+			return "";
+	}
+}
 
 /* function to check side, runs in separate tread */
-static void check_position() {
+static void check_position() 
+{
    while (true) {
         newSide = get_side(sensor);
-				/* if side is changed start timer */
-				/* else stop timer*/
+				// if side is changed and the new side is not -1
         if (newSide != -1 && side != newSide) {
-					side = newSide;
-					// if side is not default
-					if (side == 1) {
+					// if the prew side is count stop the count
+					if (strcmp(get_side_value(side), "COUNT") == 0) {
 						counter_active = false;
+					}
+					// if the prew side is time stop the timer
+					if (strcmp(get_side_value(side), "TIME") == 0) {
+						stop_timer();
+						k_msleep(100);
+					}
+					// set the new side
+					side = newSide;
+					// if the new side is count start the count
+					if (strcmp(get_side_value(side), "COUNT") == 0) {
+						counter_active = true;
+					}
+					// if the new side is time start the timer
+					if (strcmp(get_side_value(side), "TIME") == 0) {
 						start_timer();
 					}
-					else {
-						counter_active = true;
-						stop_timer();
-					}
         }
-				/* sleep for 1 seconds */
-        k_msleep(1000);
     }
 }
 
@@ -691,7 +744,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_READY:
 		LOG_INF("AWS_IOT_EVT_READY");
-		/* Start to check the position */
+		/* on iot ready create a new thred for start to check the position */
 		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area), check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
@@ -785,13 +838,6 @@ static int init_button()
 {
 	int ret;
 	/* init button, when button is pressed call function button-pressed */
-	// Initialize impact sensor with a handler function.
-	ret = ext_sensors_init(impact_handler);
-	if (ret) {
-		printf("Error initializing sensors: %d\n", ret);
-		return ret;
-	}
-
 	// inititilize button with interruption event
 	if (!gpio_is_ready_dt(&button)) {
 		printk("Error: button device %s is not ready\n", button.port->name);
