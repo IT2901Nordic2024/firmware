@@ -44,6 +44,9 @@
 #include <pb_encode.h>
 #include <pb_decode.h>
 
+#include <data.pb.h>
+
+
 /* button */
 #define SW0_NODE DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
@@ -853,6 +856,36 @@ static int init_button()
 	return ret;
 }
 
+static void create_message()
+{
+	    // Create a buffer to hold the serialized data
+    uint8_t buffer[128];  // Ensure this buffer is large enough for your data
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+
+    // Create an instance of HabitData and initialize it
+    HabitData message = HabitData_init_zero;
+
+    // Assign values to the message fields
+    message.device_timestamp = 123456789;
+    strcpy(message.habit_id, "habit123");
+    message.data = 42;
+    message.start_timestamp = 123450000;
+    message.stop_timestamp = 123456000;
+
+    // Encode the message
+    bool status = pb_encode(&stream, HabitData_fields, &message);
+    if (!status) {
+        printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+        return -1;
+    }
+
+    printf("Encoded message with size: %zu bytes\n", stream.bytes_written);
+
+    // Here you would typically send the buffer over a communication interface
+    // Example: send_over_uart(buffer, stream.bytes_written);
+
+    return 0;
+}
 
 int main(void)
 {
@@ -879,21 +912,19 @@ int main(void)
 	// start the aws iot sample
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
-	/*
-		ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-		if (ret != 0) {
-			printk("Error %d: failed to configure %s pin %d\n", ret, button.port->name,
-			       button.pin);
-			return 0;
-		}*/
-	/*
-		ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
-		if (ret != 0) {
-			printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
-			       button.port->name, button.pin);
-			return 0;
-		}
-	*/
+	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	if (ret != 0) {
+		printk("Error %d: failed to configure %s pin %d\n", ret, button.port->name,
+						button.pin);
+		return 0;
+	}
+	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+	if (ret != 0) {
+		printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
+						button.port->name, button.pin);
+		return 0;
+	}
+
 	/* init the aws connection */
 
 	/* Setup handler for Zephyr NET Connection Manager events. */

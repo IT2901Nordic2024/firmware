@@ -1,0 +1,10 @@
+syntax = "proto3";
+package habit_data;
+
+message habit_data {
+  int32 device_timestamp = 1;
+  string habit_id = 2;
+  int32 data = 3;
+  int32 start_timestamp = 4;
+  int32 stop_timestamp = 5;
+}
