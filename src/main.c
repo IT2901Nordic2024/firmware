@@ -92,7 +92,7 @@ char accelZ[10];
 
 /* counter variables */
 int occurrence_count = 0;
-bool counter_active = true;
+bool counter_active = false;
 
 /* time variables */
 int64_t unix_time;
@@ -109,17 +109,17 @@ int newSide;
 int correct_side;
 
 // 0 is default, 1 is count, 2 is timer
-int side_0 = 2;
-int side_1 = 1;
-int side_2 = 2;
-int side_3 = 1;
-int side_4 = 2;
-int side_5 = 1;
-int side_6 = 2;
-int side_7 = 1;
-int side_8 = 0;
-int side_9 = 0;
-int side_10 = 0;
+int side_0 = "TIME";
+int side_1 = "COUNT";
+int side_2 = "TIME";
+int side_3 = "COUNT";
+int side_4 = "TIME";
+int side_5 = "COUNT";
+int side_6 = "TIME";
+int side_7 = "COUNT";
+int side_8 = "";
+int side_9 = "";
+int side_10 = "";
 
 
 
@@ -527,10 +527,10 @@ static void stop_timer()
 	}
 }
 
-static int get_side_value(int side) {
+static char get_side_value(int side) {
 	switch (side) {
 		case 0:
-			return 0;
+			return "";
 		case 1:
 			return side_0;
 		case 2:
@@ -564,17 +564,17 @@ static void check_position() {
 				/* else stop timer*/
         if (newSide != -1 && side != newSide) {
 					printk("Side: %d\n", side);
-					if (get_side_value(side) == 1) {
+					if (get_side_value(side) == "COUNT") {
 						counter_active = false;
 					}
-					if (get_side_value(side) == 2) {
+					if (get_side_value(side) == "TIME") {
 						stop_timer();
 					}
 					side = newSide;
-					if (get_side_value(side) == 1) {
+					if (get_side_value(side) == "COUNT") {
 						counter_active = true;
 					}
-					if (get_side_value(side) == 2) {
+					if (get_side_value(side) == "TIME") {
 						start_timer();
 					}
         }
