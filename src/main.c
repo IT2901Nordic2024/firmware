@@ -24,7 +24,9 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/drivers/sensor.h>
-#include "ext_sensors.h"
+#include <ext_sensors.h>
+
+#include <date_time.h>
 
 /*Settings and NVS*/
 #include <zephyr/settings/settings.h>
@@ -64,7 +66,7 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 #define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
 
 /* Macro called upon a fatal error, reboots the device. */
-#define FATAL_ERROR()                                                                              \
+#define FATAL_ERROR()                                                                        \
 	LOG_ERR("Fatal error! Rebooting the device.");                                             \
 	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
@@ -90,14 +92,19 @@ char accelZ[10];
 
 /* counter variables */
 int occurrence_count = 0;
+bool counter_active = true;
+
+/* time variables */
+int64_t unix_time;
+int64_t start_time;
+int64_t stop_time;
 
 /* LED */
 #define LED0_NODE DT_ALIAS(led0)
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
-static struct k_work_delayable led_off_work;
 
 /* Side of the device for sending based on rotation */
-int side;
+int side = 0;
 int newSide;
 int correct_side;
 
@@ -109,10 +116,18 @@ static struct net_mgmt_event_callback conn_cb;
 static void shadow_update_work_fn(struct k_work *work);
 static void connect_work_fn(struct k_work *work);
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
+static void check_position();
+static void turn_led_off(struct k_work *work);
 
 /* Work items used to control some aspects of the sample. */
 static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
+static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
+
+/* Start thread for checking the position of the device */
+K_THREAD_STACK_DEFINE(stack_area, 2048);
+struct k_thread check_pos_data;
+
 
 /* Static functions */
 static void turn_led_off(struct k_work *work)
@@ -300,7 +315,7 @@ static int get_side(const struct device *dev)
 	// find what side is up
 	correct_side = find_what_side(normal_vectors, 12);
 
-	printk("Side: %i \n", correct_side);
+	//printk("Side: %i \n", correct_side);
 	return correct_side;
 }
 
@@ -380,10 +395,14 @@ static void shadow_update_work_fn(struct k_work *work)
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
 		.state.reported.count = occurrence_count,
-	};
+		.state.reported.start_time = start_time,
+		.state.reported.stop_time = stop_time,
+	}; 
 
 	// set counter to 0
 	occurrence_count = 0;
+	start_time = 0;
+	stop_time = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
@@ -437,22 +456,84 @@ static void event_trigger()
 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
-/* function with a while loop that checks if side is changed */
-static void check_position(void)
+static void impact_handler(const struct ext_sensor_evt *const evt)
 {
-	while (true) {
-
-		newSide = get_side(sensor);
-		/*if side is changed send event trigger*/
-		if (side != newSide) {
-			side = newSide;
-			if (side != -1){
-				event_trigger();
-			}
-		}
-
-		k_msleep(1000);
+	switch (evt->type) {
+			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
+					if (counter_active) {
+						printf("Impact detected: %6.2f g\n", evt->value);
+						// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
+						(void)k_work_cancel_delayable(&shadow_update_work);
+						occurrence_count ++;
+						gpio_pin_set_dt(&led, 1);
+						k_work_schedule(&led_off_work, K_SECONDS(0.2));
+						(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
+					}
+			default:
+					break;
 	}
+}
+
+static void start_timer()
+{
+	//start_time and send event trigger
+	int ret;
+	ret = date_time_now(&unix_time);
+	//checks if time is updated else try again
+	if (ret == 0) {
+		printk("Starting timer\n");
+		start_time = unix_time;
+		gpio_pin_set_dt(&led, 1);
+		event_trigger();
+	}
+	else {
+		LOG_ERR("Error getting time");
+		k_msleep(2000);
+		start_timer();
+	}
+}
+
+static void stop_timer() 
+{
+	//stop_time and send event trigger
+	int ret;
+	ret = date_time_now(&unix_time);
+	//checks if time is updated else try again
+	if (ret == 0) {
+		printk("Stopping timer\n");
+		stop_time = unix_time;
+		k_work_schedule(&led_off_work, K_NO_WAIT);
+		event_trigger();
+	}
+	else {
+		LOG_ERR("Error getting time");
+		k_msleep(2000);
+		stop_timer();
+	}
+}
+
+
+/* function to check side, runs in separate tread */
+static void check_position() {
+   while (true) {
+        newSide = get_side(sensor);
+				/* if side is changed start timer */
+				/* else stop timer*/
+        if (newSide != -1 && side != newSide) {
+					side = newSide;
+					// if side is not default
+					if (side == 1) {
+						counter_active = false;
+						start_timer();
+					}
+					else {
+						counter_active = true;
+						stop_timer();
+					}
+        }
+				/* sleep for 1 seconds */
+        k_msleep(1000);
+    }
 }
 
 static void connect_work_fn(struct k_work *work)
@@ -487,20 +568,10 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 			"from the previous session");
 	}
 
-#if defined(CONFIG_BOOTLOADER_MCUBOOT)
-	boot_write_img_confirmed();
-#endif
-
-	/* Start sequential updates to AWS IoT. */
-	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
-
-	/* set button pressed as buttons funcion
+  /* set button pressed as buttons funcion */
 	gpio_init_callback(&button_cb_data, event_trigger, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
-	printk("Set up button at %s pin %d\n", button.port->name, button.pin); */
-
-	/* Start to check the position */
-	check_position();
+	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -620,6 +691,8 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_READY:
 		LOG_INF("AWS_IOT_EVT_READY");
+		/* Start to check the position */
+		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area), check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
@@ -693,25 +766,6 @@ static void connectivity_event_handler(struct net_mgmt_event_callback *cb, uint3
 	}
 }
 
-static void impact_handler(const struct ext_sensor_evt *const evt)
-{
-	switch (evt->type) {
-	case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
-		printf("Impact detected: %6.2f g\n", evt->value);
-		// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5
-		// secound delay
-		(void)k_work_cancel_delayable(&shadow_update_work);
-		occurrence_count++;
-		gpio_pin_set_dt(&led, 1);
-		k_work_schedule(&led_off_work, K_SECONDS(0.2));
-		(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
-
-	// Handle other events...
-	default:
-		break;
-	}
-}
-
 static int init_led()
 {
 	int ret;
@@ -723,8 +777,8 @@ static int init_led()
 	if (ret < 0) {
 		return 0;
 	}
-	k_work_init_delayable(&led_off_work, turn_led_off);
 	return ret;
+	k_work_schedule(&led_off_work, K_NO_WAIT);
 }
 
 static int init_button()
@@ -753,16 +807,20 @@ static int init_button()
 	return ret;
 }
 
+
 int main(void)
 {
-	/* set side and create new side function to detect change */
-	side = get_side(sensor);
-
 	int ret;
 	// initialize led function
 	ret = init_led();
 	// initialize button function
 	ret = init_button();
+
+	ret = ext_sensors_init(impact_handler);
+	if (ret) {
+			printf("Error initializing sensors: %d\n", ret);
+			return ret;
+	}
 
 	int err;
 	err = start_settings_subsystem();
