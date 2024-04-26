@@ -570,9 +570,7 @@ static void parse_config_json(const char *json){
             Settings_data side_settings_from_json;
             if (id != NULL && cJSON_IsString(id)) {
 				
-				// Duplicate id string 
-				id_str = strdup(id->valuestring);
-                side_settings_from_json.id = id_str;
+				side_settings_from_json.id = id->valuestring;
 				printk("Id: %s\n", side_settings_from_json.id);
 
 				if (type != NULL && cJSON_IsString(type)) {
