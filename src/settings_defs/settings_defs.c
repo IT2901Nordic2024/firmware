@@ -2,18 +2,19 @@
 #include <errno.h>
 
 #define DEFAULT_TYPE_VALUE ""
+#define DEFAULT_ID_VALUE ""
 
-struct settings_data side_0_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_1_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_2_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_3_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_4_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_5_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_6_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_7_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_8_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_9_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_10_settings = { .id = "", .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_0_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_1_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_2_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_3_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_4_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_5_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_6_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_7_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_8_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_9_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_10_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
 
 struct settings_data *side_settings[MAX_SIDES] = {
     &side_0_settings,

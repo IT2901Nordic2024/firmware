@@ -57,12 +57,21 @@ static struct gpio_callback button_cb_data;
 
 typedef struct settings_data Settings_data; 
 
+void save_side_config(int side, Settings_data side_settings);
+
 char *id_str;
+
+bool first_run = true;
 
 struct side_item *side_items[MAX_SIDES];
 
-int payload_side_count = 0;
+#define NVS_PARTITION		storage_partition
+#define NVS_PARTITION_DEVICE	FIXED_PARTITION_DEVICE(NVS_PARTITION)
+#define NVS_PARTITION_OFFSET	FIXED_PARTITION_OFFSET(NVS_PARTITION)
 
+static struct nvs_fs fs;
+
+int payload_side_count = 0;
 
 uint16_t config_version;
 
@@ -301,21 +310,30 @@ static int aws_iot_client_init(void)
 static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
-	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = { 0 };
 	// TODO: Send side config settings to AWS
-	struct payload payload = {
-		.version = config_version,
-		.state.reported.count = payload_side_count,
-		.state.reported.side_items = side_items,
-	}; 
+	cJSON *root = cJSON_CreateObject();
+	cJSON *state = cJSON_CreateObject();
+	
+	if (config_version == 0) {
+		cJSON *reported = cJSON_CreateNull();
+	} else {
+	cJSON *reported = cJSON_CreateObject();
 
-
-	err = json_payload_construct(message, sizeof(message), &payload);
-	if (err) {
-			LOG_ERR("json_payload_construct, error: %d", err);
-			FATAL_ERROR();
-			return;
+	
+	for (int i=0; i<MAX_SIDES; i++){
+		char *item_number_as_string = malloc(2);
+		sprintf(item_number_as_string, "%d", i);
+		cJSON *side_item = cJSON_CreateObject();
+		cJSON_AddStringToObject(side_item, "id", side_settings[i]->id);
+		cJSON_AddStringToObject(side_item, "type", side_settings[i]->type);
+		cJSON_AddItemToObject(reported, item_number_as_string, side_item);
+		
 	}
+	// cJSON_AddNumberToObject(state, "version", config_version);
+	cJSON_AddItemToObject(state, "reported", reported);	
+	cJSON_AddItemToObject(root, "state", state);
+	}
+	char *message = cJSON_Print(root);
 
 	struct aws_iot_data tx_data = {
 		.qos = MQTT_QOS_0_AT_MOST_ONCE,
@@ -333,13 +351,6 @@ static void shadow_update_work_fn(struct k_work *work)
 		}
 	}
 
-	err = json_payload_construct(message, sizeof(message), &payload);
-	if (err) {
-		LOG_ERR("json_payload_construct, error: %d", err);
-		FATAL_ERROR();
-		return;
-	}
-
 	tx_data.ptr = message;
 	tx_data.len = strlen(message);
 
@@ -351,6 +362,8 @@ static void shadow_update_work_fn(struct k_work *work)
 		FATAL_ERROR();
 		return;
 	}
+	cJSON_free(message);
+	cJSON_Delete(root);
 }
 
 /* System Workqueue handlers. */
@@ -373,6 +386,47 @@ static void check_position(void) {
         }
         k_msleep(2000);
     }
+}
+
+int send_shadow_update_msg(char *msg){
+	struct aws_iot_data tx_data = {
+		.qos = MQTT_QOS_0_AT_MOST_ONCE,
+		.topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
+	};
+
+	tx_data.ptr = msg;
+	tx_data.len = strlen(msg);
+
+	LOG_INF("Publishing message: %s to AWS IoT shadow", msg);
+	int err = aws_iot_send(&tx_data);
+	if (err) {
+		LOG_ERR("aws_iot_send, error: %d", err);
+		return err;
+	}
+	return 0;
+
+}
+
+void on_first_run(void)
+{
+	// Store defaults in settings (empty strings)
+	for (int i = 0; i < MAX_SIDES; i++) {
+		side_settings[i]->id = "";
+		side_settings[i]->type = "";
+		save_side_config(i, *side_settings[i]);
+	}
+	config_version = 0;
+	settings_save_one("config_version", 0, sizeof(0));
+	// Create CJSON object with "state": {"reported": {null}}
+	cJSON *root = cJSON_CreateObject();
+	cJSON *state = cJSON_CreateObject();
+	cJSON *reported = cJSON_CreateNull();
+	cJSON_AddItemToObject(state, "reported", reported);
+	cJSON_AddItemToObject(root, "state", state);
+	char *out = cJSON_Print(root);
+	int err = send_shadow_update_msg(out);
+	first_run = false;
+	
 }
 
 static void connect_work_fn(struct k_work *work)
@@ -414,6 +468,9 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 
 	/* Start to check the position */
 	// check_position();
+
+	// Send current state
+	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -474,12 +531,11 @@ static void on_net_event_l4_disconnected(void)
 }
 
 
-static void save_side_config(int side, Settings_data side_settings){
+void save_side_config(int side, Settings_data side_settings){
 	char name[20];
 	
 	sprintf(name, "side_%d/id", side);
 	int ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
-
 	if (ret) {
 		printk("Error saving side_%d/id: %d\n", side, ret);
 	} 
@@ -547,12 +603,6 @@ static void parse_config_json(const char *json){
 		printk("Timestamp is not a number\n");
 	}
 
-	// // Empty side items
-	// for (int i = 0; i < MAX_SIDES; i++) {
-	// 	side_items[i] = NULL;
-	// }
-	// payload_side_count = 0;
-
     // Get state
     cJSON *state = cJSON_GetObjectItem(root, "state");
     if (state != NULL) {
@@ -564,29 +614,26 @@ static void parse_config_json(const char *json){
             // Get id and type
             cJSON *id = cJSON_GetObjectItem(side_config, "id");
             cJSON *type = cJSON_GetObjectItem(side_config, "type");
-	
 
-            // Create Settings_data and save it
-            Settings_data side_settings_from_json;
             if (id != NULL && cJSON_IsString(id)) {
-				
-				side_settings_from_json.id = id->valuestring;
-				printk("Id: %s\n", side_settings_from_json.id);
+				side_settings[side]->id = malloc(strlen(id->valuestring) + 1);
+				if (side_settings[side]->id == NULL) {
+					printk("Failed to allocate memory for id\n");
+					return;
+				}
+				strcpy(side_settings[side]->id, id->valuestring);
+				printk("Id: %s\n", side_settings[side]->id);
 
 				if (type != NULL && cJSON_IsString(type)) {
                 if (strcmp(type->valuestring, "TIME") == 0) {
-                    side_settings_from_json.type = "TIME";
+                    side_settings[side]->type = "TIME";
                 } else if (strcmp(type->valuestring, "COUNT") == 0) {
-                    side_settings_from_json.type = "COUNT";
+                    side_settings[side]->type = "COUNT";
                 } 
             	} else {
-					side_settings_from_json.type = side_settings[side]->type;
 					printk("Copied type from previous: %s\n", side_settings[side]->type);
 				}
-				printk("Type: %s\n", side_settings_from_json.type);
-				save_side_config(side, side_settings_from_json);
-				// side_items[side] = &side_settings_from_json;
-				// payload_side_count++;
+				save_side_config(side, *side_settings[side]);
             } else {
 				printk("Throwing away side config due to invalid id or type\n");
 			}
@@ -599,42 +646,21 @@ static void parse_config_json(const char *json){
 	config_version = version->valueint;
 	settings_save_one("config_version", &config_version, sizeof(config_version));;
 
-	// Print json
-	char *out = cJSON_Print(root);
-	printk("Parsed JSON: %s\n", out);
-
 	// Duplicate contents of state to reported
 	cJSON *reported = cJSON_Duplicate(state, 1);
 	cJSON *state_reported = cJSON_CreateObject();
 	cJSON_AddItemToObject(state_reported, "reported", reported);
 	cJSON_ReplaceItemInObject(root, "state", state_reported);
 
-	// Delete metadata and timestamp
+	// Delete metadata, version and timestamp
 	cJSON_DeleteItemFromObject(root, "metadata");
 	cJSON_DeleteItemFromObject(root, "timestamp");
+	cJSON_DeleteItemFromObject(root, "version");
 
 	// Print json
-	out = cJSON_Print(root);
-	printk("Parsed JSON: %s\n", out);
+	char *out = cJSON_Print(root);
 
-	// Send the modified json to aws without using k_work_reschedule
-
-	struct aws_iot_data tx_data = {
-		.qos = MQTT_QOS_0_AT_MOST_ONCE,
-		.topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
-	};
-
-	tx_data.ptr = out;
-	tx_data.len = strlen(out);
-
-	LOG_INF("Publishing message: %s to AWS IoT shadow", out);
-
-	int err = aws_iot_send(&tx_data);
-	if (err) {
-		LOG_ERR("aws_iot_send, error: %d", err);
-		FATAL_ERROR();
-		return;
-	}
+	send_shadow_update_msg(out);
 
 	// Free json
 	cJSON_free(out);
@@ -655,6 +681,9 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_READY:
 		LOG_INF("AWS_IOT_EVT_READY");
+		if (first_run){
+			on_first_run();
+		}
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
@@ -664,9 +693,9 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
-		if (strncmp(evt->data.msg.topic.str, "$aws/things/T3/shadow/update/delta", evt->data.msg.topic.len) == 0) {
+		if (strncmp(evt->data.msg.topic.str, "$aws/things/T2/shadow/update/delta", evt->data.msg.topic.len) == 0) {
 			parse_config_json(evt->data.msg.ptr);
-		}
+		} 
 		break;
 	case AWS_IOT_EVT_PUBACK:
 		LOG_INF("AWS_IOT_EVT_PUBACK, message ID: %d", evt->data.message_id);
@@ -795,8 +824,10 @@ int main(void)
 {	
 	/* set side and create new side function to detect change */
 	// side = get_side(sensor);
-
+	k_sleep(K_SECONDS(10));
+	// Initialize NVS
 	int ret;
+	
 	// initialize led function
 	ret = init_led();
 	// initialize button function
@@ -809,6 +840,9 @@ int main(void)
 		FATAL_ERROR();
 		return err;
 	}
+	
+
+	
 
 	// Print all loaded settings
 	for (int i = 0; i < MAX_SIDES; i++) {
