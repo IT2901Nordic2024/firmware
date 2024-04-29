@@ -21,7 +21,7 @@ zephyr_include_directories(src)
 zephyr_include_directories(src/json_payload)
 zephyr_include_directories(ext_sensors)
 zephyr_include_directories(src/settings_defs)
-zephyr_include_directories(src/proto)
+#zephyr_include_directories(src/proto)
 
 # Include generated nanopb files
 zephyr_include_directories(${Protobuf_INCLUDE_DIRS})

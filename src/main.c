@@ -73,6 +73,13 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
 /* additional definitions */
+//define topic based on the thing
+#define MY_CUSTOM_TOPIC "habit-tracker-data/T3/events"
+
+static struct aws_iot_topic_data myTopic = {
+				.str = MY_CUSTOM_TOPIC,
+				.len = strlen(MY_CUSTOM_TOPIC),
+};
 
 /*
  * Sensor variables
@@ -92,7 +99,7 @@ char accelY[10];
 char accelZ[10];
 
 /* counter variables */
-int occurrence_count = 0;
+int32_t occurrence_count = 0;
 bool counter_active = false;
 
 /* time variables */
@@ -121,8 +128,6 @@ char *side_8[] = {"",""};
 char *side_9[] = {"",""};
 char *side_10[] = {"",""};
 
-
-
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
 static struct net_mgmt_event_callback conn_cb;
@@ -131,6 +136,7 @@ static struct net_mgmt_event_callback conn_cb;
 static void shadow_update_work_fn(struct k_work *work);
 static void connect_work_fn(struct k_work *work);
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
+static void counter_stop(struct k_work *work);
 static void check_position();
 static void turn_led_off(struct k_work *work);
 static void create_message();
@@ -139,11 +145,71 @@ static void create_message();
 static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
+static K_WORK_DELAYABLE_DEFINE(counter_stop_work, counter_stop);
 
 /* Create thread for checking the position of the device */
 K_THREAD_STACK_DEFINE(stack_area, 2048);
 struct k_thread check_pos_data;
 
+/* mock data */
+// returns the value of the side based on the side number
+static char *get_side_value(int side) {
+	switch (side) {
+		case 1:
+			return side_0[0];
+		case 2:
+			return side_1[0];
+		case 3:
+			return side_2[0];
+		case 4:
+			return side_3[0];
+		case 5:
+			return side_4[0];
+		case 6:
+			return side_5[0];
+		case 7:
+			return side_6[0];
+		case 8:
+			return side_7[0];
+		case 9:
+			return side_8[0];
+		case 10:
+			return side_9[0];
+		case 11:
+			return side_10[0];
+		default:
+			return "";
+	}
+}
+//returns the habit based on side
+static char *get_habit_id(int side) {
+	switch (side) {
+		case 1:
+			return side_0[1];
+		case 2:
+			return side_1[1];
+		case 3:
+			return side_2[1];
+		case 4:
+			return side_3[1];
+		case 5:
+			return side_4[1];
+		case 6:
+			return side_5[1];
+		case 7:
+			return side_6[1];
+		case 8:
+			return side_7[1];
+		case 9:
+			return side_8[1];
+		case 10:
+			return side_9[1];
+		case 11:
+			return side_10[1];
+		default:
+			return "";
+	}
+}
 
 /* Static functions */
 static int32_t int64_to_int32(int64_t large_value) {
@@ -477,23 +543,18 @@ static void shadow_update_work_fn(struct k_work *work)
 // 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 // }
 
-	// habit_data message = habit_data_init_zero;
-	// date_time_now(&unix_time);
-	// message.device_timestamp = int64_to_int32(unix_time);
-	// message.data = 3
-	// message.habit_id.arg = "1714396295426";
-	// message.habit_id.funcs.encode = &encode_string;
-	// message.start_timestamp = 123;
-	// message.stop_timestamp = 123456000;
-static void counter_start(char *habit_id)
+
+static void counter_stop(struct k_work *work)
 {
-	counter_active = true;
-	while (counter_active){
-
-	}
+	habit_data message = habit_data_init_zero;
+	date_time_now(&unix_time);
+	message.device_timestamp = int64_to_int32(unix_time);
+	message.data = occurrence_count;
+	message.habit_id.arg = get_habit_id(side);
+	message.habit_id.funcs.encode = &encode_string;
+	occurrence_count = 0;
+	create_message(message);
 }
-
-// static void counter_stop()
 
 static void impact_handler(const struct ext_sensor_evt *const evt)
 {
@@ -502,12 +563,12 @@ static void impact_handler(const struct ext_sensor_evt *const evt)
 					// if counter is active run the impact handler
 					if (counter_active) {
 						printf("Impact detected: %6.2f g\n", evt->value);
-						// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
-						(void)k_work_cancel_delayable(&shadow_update_work);
+						// cancel, count one, activate led, and rescedule with 5 secound delay
+						(void)k_work_cancel_delayable(&counter_stop_work);
 						occurrence_count ++;
 						gpio_pin_set_dt(&led, 1);
 						k_work_schedule(&led_off_work, K_SECONDS(0.2));
-						(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
+						(void)k_work_reschedule(&counter_stop_work, K_SECONDS(5));
 					}
 			default:
 					break;
@@ -534,7 +595,7 @@ static void start_timer()
 
 }
 
-static void stop_timer(char *habit_id) 
+static void stop_timer() 
 {
 	//stop_time and send event trigger
 	int ret;
@@ -544,7 +605,7 @@ static void stop_timer(char *habit_id)
 		printk("Stopping timer\n");
 		habit_data message = habit_data_init_zero;
 		message.device_timestamp = int64_to_int32(unix_time);
-		message.habit_id.arg = habit_id;
+		message.habit_id.arg = get_habit_id(side);
 		message.habit_id.funcs.encode = &encode_string;
 		message.start_timestamp = int64_to_int32(start_time);
 		message.stop_timestamp = int64_to_int32(unix_time);
@@ -554,66 +615,7 @@ static void stop_timer(char *habit_id)
 	else {
 		LOG_ERR("Error getting time");
 		k_msleep(2000);
-		stop_timer(habit_id);
-	}
-}
-
-// returns the value of the side based on the side number
-static char *get_side_value(int side) {
-	switch (side) {
-		case 1:
-			return side_0[0];
-		case 2:
-			return side_1[0];
-		case 3:
-			return side_2[0];
-		case 4:
-			return side_3[0];
-		case 5:
-			return side_4[0];
-		case 6:
-			return side_5[0];
-		case 7:
-			return side_6[0];
-		case 8:
-			return side_7[0];
-		case 9:
-			return side_8[0];
-		case 10:
-			return side_9[0];
-		case 11:
-			return side_10[0];
-		default:
-			return "";
-	}
-}
-
-static char *get_habit_id(int side) {
-	switch (side) {
-		case 1:
-			return side_0[1];
-		case 2:
-			return side_1[1];
-		case 3:
-			return side_2[1];
-		case 4:
-			return side_3[1];
-		case 5:
-			return side_4[1];
-		case 6:
-			return side_5[1];
-		case 7:
-			return side_6[1];
-		case 8:
-			return side_7[1];
-		case 9:
-			return side_8[1];
-		case 10:
-			return side_9[1];
-		case 11:
-			return side_10[1];
-		default:
-			return "";
+		stop_timer();
 	}
 }
 
@@ -627,10 +629,11 @@ static void check_position()
 					// if the prew side is count stop the count
 					if (strcmp(get_side_value(side), "COUNT") == 0) {
 						counter_active = false;
+						(void)k_work_reschedule(&counter_stop_work, K_NO_WAIT);
 					}
 					// if the prew side is time stop the timer
 					if (strcmp(get_side_value(side), "TIME") == 0) {
-						stop_timer(get_habit_id(side));
+						stop_timer();
 						k_msleep(100);
 					}
 					// set the new side
@@ -642,7 +645,6 @@ static void check_position()
 					// if the new side is time start the timer
 					if (strcmp(get_side_value(side), "TIME") == 0) {
 						start_timer(
-						
 						);
 					}
         }
@@ -923,15 +925,6 @@ static void create_message(habit_data message)
         printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
         return;
     }
-
-		//define topic based on the thing
-		#define MY_CUSTOM_TOPIC "habit-tracker-data/T3/events"
-		printk("custom topic: %s\n", MY_CUSTOM_TOPIC);
-
-		static struct aws_iot_topic_data myTopic = {
-						.str = MY_CUSTOM_TOPIC,
-						.len = strlen(MY_CUSTOM_TOPIC),
-		};
 	
 		printf("send protobuff message \n");
 		struct aws_iot_data data = {
@@ -941,7 +934,7 @@ static void create_message(habit_data message)
 			.len = stream.bytes_written,
 		};
 
-		LOG_INF("Publishing message: %s to AWS IoT shadow", data.ptr);
+		// LOG_INF("Publishing message: %s to AWS IoT shadow", data.ptr);
 		int err = aws_iot_send(&data);
 		if (err) {
 			LOG_ERR("aws_iot_send, error: %d", err);
