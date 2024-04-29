@@ -21,7 +21,6 @@ PROTOBUF_PRAGMA_INIT_SEG
 namespace _pb = ::google::protobuf;
 namespace _pbi = ::google::protobuf::internal;
 namespace _fl = ::google::protobuf::internal::field_layout;
-namespace habit_data {
 
 inline constexpr habit_data::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
@@ -47,7 +46,6 @@ struct habit_dataDefaultTypeInternal {
 
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
     PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 habit_dataDefaultTypeInternal _habit_data_default_instance_;
-}  // namespace habit_data
 static ::_pb::Metadata file_level_metadata_data_2eproto[1];
 static constexpr const ::_pb::EnumDescriptor**
     file_level_enum_descriptors_data_2eproto = nullptr;
@@ -57,39 +55,39 @@ const ::uint32_t
     TableStruct_data_2eproto::offsets[] ABSL_ATTRIBUTE_SECTION_VARIABLE(
         protodesc_cold) = {
         ~0u,  // no _has_bits_
-        PROTOBUF_FIELD_OFFSET(::habit_data::habit_data, _internal_metadata_),
+        PROTOBUF_FIELD_OFFSET(::habit_data, _internal_metadata_),
         ~0u,  // no _extensions_
         ~0u,  // no _oneof_case_
         ~0u,  // no _weak_field_map_
         ~0u,  // no _inlined_string_donated_
         ~0u,  // no _split_
         ~0u,  // no sizeof(Split)
-        PROTOBUF_FIELD_OFFSET(::habit_data::habit_data, _impl_.device_timestamp_),
-        PROTOBUF_FIELD_OFFSET(::habit_data::habit_data, _impl_.habit_id_),
-        PROTOBUF_FIELD_OFFSET(::habit_data::habit_data, _impl_.data_),
-        PROTOBUF_FIELD_OFFSET(::habit_data::habit_data, _impl_.start_timestamp_),
-        PROTOBUF_FIELD_OFFSET(::habit_data::habit_data, _impl_.stop_timestamp_),
+        PROTOBUF_FIELD_OFFSET(::habit_data, _impl_.device_timestamp_),
+        PROTOBUF_FIELD_OFFSET(::habit_data, _impl_.habit_id_),
+        PROTOBUF_FIELD_OFFSET(::habit_data, _impl_.data_),
+        PROTOBUF_FIELD_OFFSET(::habit_data, _impl_.start_timestamp_),
+        PROTOBUF_FIELD_OFFSET(::habit_data, _impl_.stop_timestamp_),
 };
 
 static const ::_pbi::MigrationSchema
     schemas[] ABSL_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
-        {0, -1, -1, sizeof(::habit_data::habit_data)},
+        {0, -1, -1, sizeof(::habit_data)},
 };
 static const ::_pb::Message* const file_default_instances[] = {
-    &::habit_data::_habit_data_default_instance_._instance,
+    &::_habit_data_default_instance_._instance,
 };
 const char descriptor_table_protodef_data_2eproto[] ABSL_ATTRIBUTE_SECTION_VARIABLE(
     protodesc_cold) = {
-    "\n\ndata.proto\022\nhabit_data\"w\n\nhabit_data\022\030"
-    "\n\020device_timestamp\030\001 \001(\005\022\020\n\010habit_id\030\002 \001"
-    "(\t\022\014\n\004data\030\003 \001(\005\022\027\n\017start_timestamp\030\004 \001("
-    "\005\022\026\n\016stop_timestamp\030\005 \001(\005b\006proto3"
+    "\n\ndata.proto\"w\n\nhabit_data\022\030\n\020device_tim"
+    "estamp\030\001 \001(\005\022\020\n\010habit_id\030\002 \001(\t\022\014\n\004data\030\003"
+    " \001(\005\022\027\n\017start_timestamp\030\004 \001(\005\022\026\n\016stop_ti"
+    "mestamp\030\005 \001(\005b\006proto3"
 };
 static ::absl::once_flag descriptor_table_data_2eproto_once;
 const ::_pbi::DescriptorTable descriptor_table_data_2eproto = {
     false,
     false,
-    153,
+    141,
     descriptor_table_protodef_data_2eproto,
     "data.proto",
     &descriptor_table_data_2eproto_once,
@@ -118,7 +116,6 @@ const ::_pbi::DescriptorTable descriptor_table_data_2eproto = {
 PROTOBUF_ATTRIBUTE_WEAK const ::_pbi::DescriptorTable* descriptor_table_data_2eproto_getter() {
   return &descriptor_table_data_2eproto;
 }
-namespace habit_data {
 // ===================================================================
 
 class habit_data::_Internal {
@@ -128,7 +125,7 @@ class habit_data::_Internal {
 habit_data::habit_data(::google::protobuf::Arena* arena)
     : ::google::protobuf::Message(arena) {
   SharedCtor(arena);
-  // @@protoc_insertion_point(arena_constructor:habit_data.habit_data)
+  // @@protoc_insertion_point(arena_constructor:habit_data)
 }
 inline PROTOBUF_NDEBUG_INLINE habit_data::Impl_::Impl_(
     ::google::protobuf::internal::InternalVisibility visibility, ::google::protobuf::Arena* arena,
@@ -153,7 +150,7 @@ habit_data::habit_data(
                offsetof(Impl_, device_timestamp_) +
                sizeof(Impl_::stop_timestamp_));
 
-  // @@protoc_insertion_point(copy_constructor:habit_data.habit_data)
+  // @@protoc_insertion_point(copy_constructor:habit_data)
 }
 inline PROTOBUF_NDEBUG_INLINE habit_data::Impl_::Impl_(
     ::google::protobuf::internal::InternalVisibility visibility,
@@ -171,7 +168,7 @@ inline void habit_data::SharedCtor(::_pb::Arena* arena) {
                sizeof(Impl_::stop_timestamp_));
 }
 habit_data::~habit_data() {
-  // @@protoc_insertion_point(destructor:habit_data.habit_data)
+  // @@protoc_insertion_point(destructor:habit_data)
   _internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
   SharedDtor();
 }
@@ -196,7 +193,7 @@ habit_data::GetClassData() const {
   return &_data_;
 }
 PROTOBUF_NOINLINE void habit_data::Clear() {
-// @@protoc_insertion_point(message_clear_start:habit_data.habit_data)
+// @@protoc_insertion_point(message_clear_start:habit_data)
   PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ::uint32_t cached_has_bits = 0;
   // Prevent compiler warnings about cached_has_bits being unused
@@ -217,7 +214,7 @@ const char* habit_data::_InternalParse(
 
 
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<3, 5, 0, 38, 2> habit_data::_table_ = {
+const ::_pbi::TcParseTable<3, 5, 0, 27, 2> habit_data::_table_ = {
   {
     0,  // no _has_bits_
     0, // no _extensions_
@@ -231,7 +228,7 @@ const ::_pbi::TcParseTable<3, 5, 0, 38, 2> habit_data::_table_ = {
     &_habit_data_default_instance_._instance,
     ::_pbi::TcParser::GenericFallback,  // fallback
     #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
-    ::_pbi::TcParser::GetTable<::habit_data::habit_data>(),  // to_prefetch
+    ::_pbi::TcParser::GetTable<::habit_data>(),  // to_prefetch
     #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
   }, {{
     {::_pbi::TcParser::MiniParse, {}},
@@ -273,8 +270,8 @@ const ::_pbi::TcParseTable<3, 5, 0, 38, 2> habit_data::_table_ = {
   }},
   // no aux_entries
   {{
-    "\25\0\10\0\0\0\0\0"
-    "habit_data.habit_data"
+    "\12\0\10\0\0\0\0\0"
+    "habit_data"
     "habit_id"
   }},
 };
@@ -282,7 +279,7 @@ const ::_pbi::TcParseTable<3, 5, 0, 38, 2> habit_data::_table_ = {
 ::uint8_t* habit_data::_InternalSerialize(
     ::uint8_t* target,
     ::google::protobuf::io::EpsCopyOutputStream* stream) const {
-  // @@protoc_insertion_point(serialize_to_array_start:habit_data.habit_data)
+  // @@protoc_insertion_point(serialize_to_array_start:habit_data)
   ::uint32_t cached_has_bits = 0;
   (void)cached_has_bits;
 
@@ -297,7 +294,7 @@ const ::_pbi::TcParseTable<3, 5, 0, 38, 2> habit_data::_table_ = {
   if (!this->_internal_habit_id().empty()) {
     const std::string& _s = this->_internal_habit_id();
     ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
-        _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "habit_data.habit_data.habit_id");
+        _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "habit_data.habit_id");
     target = stream->WriteStringMaybeAliased(2, _s, target);
   }
 
@@ -327,12 +324,12 @@ const ::_pbi::TcParseTable<3, 5, 0, 38, 2> habit_data::_table_ = {
         ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
             _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
   }
-  // @@protoc_insertion_point(serialize_to_array_end:habit_data.habit_data)
+  // @@protoc_insertion_point(serialize_to_array_end:habit_data)
   return target;
 }
 
 ::size_t habit_data::ByteSizeLong() const {
-// @@protoc_insertion_point(message_byte_size_start:habit_data.habit_data)
+// @@protoc_insertion_point(message_byte_size_start:habit_data)
   ::size_t total_size = 0;
 
   ::uint32_t cached_has_bits = 0;
@@ -376,7 +373,7 @@ const ::_pbi::TcParseTable<3, 5, 0, 38, 2> habit_data::_table_ = {
 void habit_data::MergeImpl(::google::protobuf::MessageLite& to_msg, const ::google::protobuf::MessageLite& from_msg) {
   auto* const _this = static_cast<habit_data*>(&to_msg);
   auto& from = static_cast<const habit_data&>(from_msg);
-  // @@protoc_insertion_point(class_specific_merge_from_start:habit_data.habit_data)
+  // @@protoc_insertion_point(class_specific_merge_from_start:habit_data)
   ABSL_DCHECK_NE(&from, _this);
   ::uint32_t cached_has_bits = 0;
   (void) cached_has_bits;
@@ -400,7 +397,7 @@ void habit_data::MergeImpl(::google::protobuf::MessageLite& to_msg, const ::goog
 }
 
 void habit_data::CopyFrom(const habit_data& from) {
-// @@protoc_insertion_point(class_specific_copy_from_start:habit_data.habit_data)
+// @@protoc_insertion_point(class_specific_copy_from_start:habit_data)
   if (&from == this) return;
   Clear();
   MergeFrom(from);
@@ -430,7 +427,6 @@ void habit_data::InternalSwap(habit_data* PROTOBUF_RESTRICT other) {
                                    file_level_metadata_data_2eproto[0]);
 }
 // @@protoc_insertion_point(namespace_scope)
-}  // namespace habit_data
 namespace google {
 namespace protobuf {
 }  // namespace protobuf

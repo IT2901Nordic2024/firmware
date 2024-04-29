@@ -37,14 +37,14 @@
 #include <string.h>
 #include <inttypes.h>
 #include <zephyr/sys/printk.h>
+#include "../ext_sensors/ext_sensors.h"
 
 /*Protobuf*/
 #include <pb.h>
 #include <pb_common.h>
 #include <pb_encode.h>
 #include <pb_decode.h>
-
-#include <data.pb.h>
+#include <src/data.pb.h>
 
 
 /* button */
@@ -57,7 +57,6 @@ static struct gpio_callback button_cb_data;
 
 typedef struct settings_data Settings_data;
 
-#include "../ext_sensors/ext_sensors.h"
 
 /* Register log module */
 LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
@@ -136,6 +135,7 @@ static void connect_work_fn(struct k_work *work);
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
 static void check_position();
 static void turn_led_off(struct k_work *work);
+static void create_message();
 
 /* Work items used to control some aspects of the sample. */
 static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
@@ -623,11 +623,6 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 		LOG_WRN("Persistent session is enabled, using subscriptions "
 			"from the previous session");
 	}
-
-  /* set button pressed as buttons funcion */
-	gpio_init_callback(&button_cb_data, event_trigger, BIT(button.pin));
-	gpio_add_callback(button.port, &button_cb_data);
-	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -749,6 +744,11 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		LOG_INF("AWS_IOT_EVT_READY");
 		/* on iot ready create a new thred for start to check the position */
 		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area), check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+		/* set button pressed as buttons funcion */
+		create_message();
+		gpio_init_callback(&button_cb_data, create_message, BIT(button.pin));
+		gpio_add_callback(button.port, &button_cb_data);
+		printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
@@ -856,35 +856,84 @@ static int init_button()
 	return ret;
 }
 
+int32_t scale_down_int64(int64_t large_value) {
+    return (int32_t)(large_value / 1000);
+}
+
+bool encode_string(pb_ostream_t* stream, const pb_field_t* field, void* const* arg)
+{
+    const char* str = (const char*)(*arg);
+
+    if (!pb_encode_tag_for_field(stream, field))
+        return false;
+
+    return pb_encode_string(stream, (uint8_t*)str, strlen(str));
+}
+
 static void create_message()
 {
 	    // Create a buffer to hold the serialized data
     uint8_t buffer[128];  // Ensure this buffer is large enough for your data
     pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+		printk("ret: %d\n", date_time_now(&unix_time));
+		
 
     // Create an instance of HabitData and initialize it
-    HabitData message = HabitData_init_zero;
+    habit_data message = habit_data_init_zero;
 
     // Assign values to the message fields
-    message.device_timestamp = 123456789;
-    strcpy(message.habit_id, "habit123");
-    message.data = 42;
-    message.start_timestamp = 123450000;
-    message.stop_timestamp = 123456000;
+		printf("timestamp %d\n", scale_down_int64(unix_time));
+
+    message.device_timestamp = scale_down_int64(unix_time);
+    message.data = 3;
+		message.habit_id.arg = "1714396295426";
+		message.habit_id.funcs.encode = &encode_string;
+    // message.start_timestamp = 123;
+    // message.stop_timestamp = 123456000;
 
     // Encode the message
-    bool status = pb_encode(&stream, HabitData_fields, &message);
+    bool status = pb_encode(&stream, habit_data_fields, &message);
     if (!status) {
         printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
-        return -1;
+        return;
     }
 
     printf("Encoded message with size: %zu bytes\n", stream.bytes_written);
 
-    // Here you would typically send the buffer over a communication interface
-    // Example: send_over_uart(buffer, stream.bytes_written);
+		printf("Serialized message: ");
+    for (size_t i = 0; i < stream.bytes_written; ++i) {
+        printf("%02X ", buffer[i]);
+    }
+    printf("\n");
+		
+		printf("send protobuff message \n");
 
-    return 0;
+		#define MY_CUSTOM_TOPIC_1 "habit-tracker-data/T3/events"
+		#define MY_CUSTOM_TOPIC_1_IDX 0
+
+		static struct aws_iot_topic_data pub_topics[1] = {
+						[MY_CUSTOM_TOPIC_1_IDX].str = MY_CUSTOM_TOPIC_1,
+						[MY_CUSTOM_TOPIC_1_IDX].len = strlen(MY_CUSTOM_TOPIC_1),
+		};
+
+		struct aws_iot_data tx_data = {
+			.qos = MQTT_QOS_0_AT_MOST_ONCE,
+			.topic = pub_topics[MY_CUSTOM_TOPIC_1_IDX],
+		};
+
+		tx_data.ptr = buffer;
+		tx_data.len = stream.bytes_written;
+
+		LOG_INF("Publishing message: %s to AWS IoT shadow", tx_data.ptr);
+
+		int err = aws_iot_send(&tx_data);
+		if (err) {
+			LOG_ERR("aws_iot_send, error: %d", err);
+			FATAL_ERROR();
+			return;
+		}
+
+    return;
 }
 
 int main(void)

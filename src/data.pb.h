@@ -49,17 +49,14 @@ struct TableStruct_data_2eproto {
 };
 extern const ::google::protobuf::internal::DescriptorTable
     descriptor_table_data_2eproto;
-namespace habit_data {
 class habit_data;
 struct habit_dataDefaultTypeInternal;
 extern habit_dataDefaultTypeInternal _habit_data_default_instance_;
-}  // namespace habit_data
 namespace google {
 namespace protobuf {
 }  // namespace protobuf
 }  // namespace google
 
-namespace habit_data {
 
 // ===================================================================
 
@@ -67,7 +64,7 @@ namespace habit_data {
 // -------------------------------------------------------------------
 
 class habit_data final : public ::google::protobuf::Message
-/* @@protoc_insertion_point(class_definition:habit_data.habit_data) */ {
+/* @@protoc_insertion_point(class_definition:habit_data) */ {
  public:
   inline habit_data() : habit_data(nullptr) {}
   ~habit_data() override;
@@ -173,7 +170,7 @@ class habit_data final : public ::google::protobuf::Message
   void InternalSwap(habit_data* other);
  private:
   friend class ::google::protobuf::internal::AnyMetadata;
-  static ::absl::string_view FullMessageName() { return "habit_data.habit_data"; }
+  static ::absl::string_view FullMessageName() { return "habit_data"; }
 
  protected:
   explicit habit_data(::google::protobuf::Arena* arena);
@@ -253,13 +250,13 @@ class habit_data final : public ::google::protobuf::Message
   void _internal_set_stop_timestamp(::int32_t value);
 
   public:
-  // @@protoc_insertion_point(class_scope:habit_data.habit_data)
+  // @@protoc_insertion_point(class_scope:habit_data)
  private:
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
   static const ::google::protobuf::internal::TcParseTable<
       3, 5, 0,
-      38, 2>
+      27, 2>
       _table_;
   friend class ::google::protobuf::MessageLite;
   friend class ::google::protobuf::Arena;
@@ -308,12 +305,12 @@ inline void habit_data::clear_device_timestamp() {
   _impl_.device_timestamp_ = 0;
 }
 inline ::int32_t habit_data::device_timestamp() const {
-  // @@protoc_insertion_point(field_get:habit_data.habit_data.device_timestamp)
+  // @@protoc_insertion_point(field_get:habit_data.device_timestamp)
   return _internal_device_timestamp();
 }
 inline void habit_data::set_device_timestamp(::int32_t value) {
   _internal_set_device_timestamp(value);
-  // @@protoc_insertion_point(field_set:habit_data.habit_data.device_timestamp)
+  // @@protoc_insertion_point(field_set:habit_data.device_timestamp)
 }
 inline ::int32_t habit_data::_internal_device_timestamp() const {
   PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
@@ -331,7 +328,7 @@ inline void habit_data::clear_habit_id() {
 }
 inline const std::string& habit_data::habit_id() const
     ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  // @@protoc_insertion_point(field_get:habit_data.habit_data.habit_id)
+  // @@protoc_insertion_point(field_get:habit_data.habit_id)
   return _internal_habit_id();
 }
 template <typename Arg_, typename... Args_>
@@ -339,11 +336,11 @@ inline PROTOBUF_ALWAYS_INLINE void habit_data::set_habit_id(Arg_&& arg,
                                                      Args_... args) {
   PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_.habit_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
-  // @@protoc_insertion_point(field_set:habit_data.habit_data.habit_id)
+  // @@protoc_insertion_point(field_set:habit_data.habit_id)
 }
 inline std::string* habit_data::mutable_habit_id() ABSL_ATTRIBUTE_LIFETIME_BOUND {
   std::string* _s = _internal_mutable_habit_id();
-  // @@protoc_insertion_point(field_mutable:habit_data.habit_data.habit_id)
+  // @@protoc_insertion_point(field_mutable:habit_data.habit_id)
   return _s;
 }
 inline const std::string& habit_data::_internal_habit_id() const {
@@ -360,7 +357,7 @@ inline std::string* habit_data::_internal_mutable_habit_id() {
 }
 inline std::string* habit_data::release_habit_id() {
   PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
-  // @@protoc_insertion_point(field_release:habit_data.habit_data.habit_id)
+  // @@protoc_insertion_point(field_release:habit_data.habit_id)
   return _impl_.habit_id_.Release();
 }
 inline void habit_data::set_allocated_habit_id(std::string* value) {
@@ -371,7 +368,7 @@ inline void habit_data::set_allocated_habit_id(std::string* value) {
           _impl_.habit_id_.Set("", GetArena());
         }
   #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  // @@protoc_insertion_point(field_set_allocated:habit_data.habit_data.habit_id)
+  // @@protoc_insertion_point(field_set_allocated:habit_data.habit_id)
 }
 
 // int32 data = 3;
@@ -380,12 +377,12 @@ inline void habit_data::clear_data() {
   _impl_.data_ = 0;
 }
 inline ::int32_t habit_data::data() const {
-  // @@protoc_insertion_point(field_get:habit_data.habit_data.data)
+  // @@protoc_insertion_point(field_get:habit_data.data)
   return _internal_data();
 }
 inline void habit_data::set_data(::int32_t value) {
   _internal_set_data(value);
-  // @@protoc_insertion_point(field_set:habit_data.habit_data.data)
+  // @@protoc_insertion_point(field_set:habit_data.data)
 }
 inline ::int32_t habit_data::_internal_data() const {
   PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
@@ -402,12 +399,12 @@ inline void habit_data::clear_start_timestamp() {
   _impl_.start_timestamp_ = 0;
 }
 inline ::int32_t habit_data::start_timestamp() const {
-  // @@protoc_insertion_point(field_get:habit_data.habit_data.start_timestamp)
+  // @@protoc_insertion_point(field_get:habit_data.start_timestamp)
   return _internal_start_timestamp();
 }
 inline void habit_data::set_start_timestamp(::int32_t value) {
   _internal_set_start_timestamp(value);
-  // @@protoc_insertion_point(field_set:habit_data.habit_data.start_timestamp)
+  // @@protoc_insertion_point(field_set:habit_data.start_timestamp)
 }
 inline ::int32_t habit_data::_internal_start_timestamp() const {
   PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
@@ -424,12 +421,12 @@ inline void habit_data::clear_stop_timestamp() {
   _impl_.stop_timestamp_ = 0;
 }
 inline ::int32_t habit_data::stop_timestamp() const {
-  // @@protoc_insertion_point(field_get:habit_data.habit_data.stop_timestamp)
+  // @@protoc_insertion_point(field_get:habit_data.stop_timestamp)
   return _internal_stop_timestamp();
 }
 inline void habit_data::set_stop_timestamp(::int32_t value) {
   _internal_set_stop_timestamp(value);
-  // @@protoc_insertion_point(field_set:habit_data.habit_data.stop_timestamp)
+  // @@protoc_insertion_point(field_set:habit_data.stop_timestamp)
 }
 inline ::int32_t habit_data::_internal_stop_timestamp() const {
   PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
@@ -445,7 +442,6 @@ inline void habit_data::_internal_set_stop_timestamp(::int32_t value) {
 #endif  // __GNUC__
 
 // @@protoc_insertion_point(namespace_scope)
-}  // namespace habit_data
 
 
 // @@protoc_insertion_point(global_scope)

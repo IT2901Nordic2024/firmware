@@ -1,5 +1,4 @@
 syntax = "proto3";
-package habit_data;
 
 message habit_data {
   int32 device_timestamp = 1;
