@@ -46,7 +46,6 @@
 #include <pb_decode.h>
 #include <src/data.pb.h>
 
-
 /* button */
 #define SW0_NODE DT_ALIAS(sw0)
 #if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
@@ -99,7 +98,6 @@ bool counter_active = false;
 /* time variables */
 int64_t unix_time;
 int64_t start_time;
-int64_t stop_time;
 
 /* LED */
 #define LED0_NODE DT_ALIAS(led0)
@@ -111,17 +109,17 @@ int newSide;
 int correct_side;
 
 // temporarly values for sides. "" is default, "COUNT" is count, "TIMER" is timer
-char *side_0 = "TIME";
-char *side_1 = "COUNT";
-char *side_2 = "TIME";
-char *side_3 = "COUNT";
-char *side_4 = "TIME";
-char *side_5 = "COUNT";
-char *side_6 = "TIME";
-char *side_7 = "COUNT";
-char *side_8 = "";
-char *side_9 = "";
-char *side_10 = "";
+char *side_0[] = {"COUNT","1714396295426"};
+char *side_1[] = {"TIME","1714396736027"};
+char *side_2[] = {"COUNT","1714402198197"};
+char *side_3[] = {"COUNT","1714402288037"};
+char *side_4[] = {"COUNT","1714402306888"};
+char *side_5[] = {"TIME","1714402317862"};
+char *side_6[] = {"TIME","1714402326610"};
+char *side_7[] = {"TIME","1714402338234"};
+char *side_8[] = {"",""};
+char *side_9[] = {"",""};
+char *side_10[] = {"",""};
 
 
 
@@ -148,6 +146,20 @@ struct k_thread check_pos_data;
 
 
 /* Static functions */
+static int32_t int64_to_int32(int64_t large_value) {
+	//scale down int64 to int32
+	return (int32_t)(large_value / 1000);
+}
+
+static bool encode_string(pb_ostream_t* stream, const pb_field_t* field, void* const* arg)
+{
+	//encode string so protobuff accept it
+	const char* str = (const char*)(*arg);
+	if (!pb_encode_tag_for_field(stream, field))
+			return false;
+	return pb_encode_string(stream, (uint8_t*)str, strlen(str));
+}
+
 static void turn_led_off(struct k_work *work)
 {
 	//turn led off in a work function
@@ -321,19 +333,15 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 
 static int get_side(const struct device *dev)
 {
-
 	//	Check if device is ready, if not return 0
 	if (!device_is_ready(dev)) {
 		printk("sensor: device not ready.\n");
 		return 0;
 	}
-
 	// apply median filter to accel values
 	sampling_filter(10, dev, 100);
-
 	// find what side is up
 	correct_side = find_what_side(normal_vectors, 12);
-
 	//printk("Side: %i \n", correct_side);
 	return correct_side;
 }
@@ -413,15 +421,9 @@ static void shadow_update_work_fn(struct k_work *work)
 	// fetch_accels(sensor);
 	struct payload payload = {
 		.state.reported.uptime = k_uptime_get(),
-		.state.reported.count = occurrence_count,
-		.state.reported.start_time = start_time,
-		.state.reported.stop_time = stop_time,
 	}; 
 
-	// set values to 0
 	occurrence_count = 0;
-	start_time = 0;
-	stop_time = 0;
 
 	err = json_payload_construct(message, sizeof(message), &payload);
 	if (err) {
@@ -468,12 +470,30 @@ static void shadow_update_work_fn(struct k_work *work)
 
 /* System Workqueue handlers. */
 /* put shadow update work infornt of the kwork queue that sends event to aws */
-static void event_trigger()
+// static void event_trigger()
+// {
+// 	printk("event_trigger\n");
+// 	/* send shadow_update_work in front of the queue */
+// 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+// }
+
+	// habit_data message = habit_data_init_zero;
+	// date_time_now(&unix_time);
+	// message.device_timestamp = int64_to_int32(unix_time);
+	// message.data = 3
+	// message.habit_id.arg = "1714396295426";
+	// message.habit_id.funcs.encode = &encode_string;
+	// message.start_timestamp = 123;
+	// message.stop_timestamp = 123456000;
+static void counter_start(char *habit_id)
 {
-	printk("event_trigger\n");
-	/* send shadow_update_work in front of the queue */
-	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+	counter_active = true;
+	while (counter_active){
+
+	}
 }
+
+// static void counter_stop()
 
 static void impact_handler(const struct ext_sensor_evt *const evt)
 {
@@ -503,17 +523,18 @@ static void start_timer()
 	if (ret == 0) {
 		printk("Starting timer\n");
 		start_time = unix_time;
+		printk("Sending message:\n");
 		gpio_pin_set_dt(&led, 1);
-		event_trigger();
 	}
 	else {
 		LOG_ERR("Error getting time");
 		k_msleep(2000);
 		start_timer();
 	}
+
 }
 
-static void stop_timer() 
+static void stop_timer(char *habit_id) 
 {
 	//stop_time and send event trigger
 	int ret;
@@ -521,14 +542,19 @@ static void stop_timer()
 	//checks if time is updated else try again
 	if (ret == 0) {
 		printk("Stopping timer\n");
-		stop_time = unix_time;
+		habit_data message = habit_data_init_zero;
+		message.device_timestamp = int64_to_int32(unix_time);
+		message.habit_id.arg = habit_id;
+		message.habit_id.funcs.encode = &encode_string;
+		message.start_timestamp = int64_to_int32(start_time);
+		message.stop_timestamp = int64_to_int32(unix_time);
+		create_message(message);
 		k_work_schedule(&led_off_work, K_NO_WAIT);
-		event_trigger();
 	}
 	else {
 		LOG_ERR("Error getting time");
 		k_msleep(2000);
-		stop_timer();
+		stop_timer(habit_id);
 	}
 }
 
@@ -536,27 +562,56 @@ static void stop_timer()
 static char *get_side_value(int side) {
 	switch (side) {
 		case 1:
-			return side_0;
+			return side_0[0];
 		case 2:
-			return side_1;
+			return side_1[0];
 		case 3:
-			return side_2;
+			return side_2[0];
 		case 4:
-			return side_3;
+			return side_3[0];
 		case 5:
-			return side_4;
+			return side_4[0];
 		case 6:
-			return side_5;
+			return side_5[0];
 		case 7:
-			return side_6;
+			return side_6[0];
 		case 8:
-			return side_7;
+			return side_7[0];
 		case 9:
-			return side_8;
+			return side_8[0];
 		case 10:
-			return side_9;
+			return side_9[0];
 		case 11:
-			return side_10;
+			return side_10[0];
+		default:
+			return "";
+	}
+}
+
+static char *get_habit_id(int side) {
+	switch (side) {
+		case 1:
+			return side_0[1];
+		case 2:
+			return side_1[1];
+		case 3:
+			return side_2[1];
+		case 4:
+			return side_3[1];
+		case 5:
+			return side_4[1];
+		case 6:
+			return side_5[1];
+		case 7:
+			return side_6[1];
+		case 8:
+			return side_7[1];
+		case 9:
+			return side_8[1];
+		case 10:
+			return side_9[1];
+		case 11:
+			return side_10[1];
 		default:
 			return "";
 	}
@@ -575,7 +630,7 @@ static void check_position()
 					}
 					// if the prew side is time stop the timer
 					if (strcmp(get_side_value(side), "TIME") == 0) {
-						stop_timer();
+						stop_timer(get_habit_id(side));
 						k_msleep(100);
 					}
 					// set the new side
@@ -586,7 +641,9 @@ static void check_position()
 					}
 					// if the new side is time start the timer
 					if (strcmp(get_side_value(side), "TIME") == 0) {
-						start_timer();
+						start_timer(
+						
+						);
 					}
         }
     }
@@ -611,7 +668,6 @@ static void connect_work_fn(struct k_work *work)
 }
 
 /* Functions that are executed on specific connection-related events. */
-
 static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 {
 	(void)k_work_cancel_delayable(&connect_work);
@@ -745,7 +801,6 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		/* on iot ready create a new thred for start to check the position */
 		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area), check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
 		/* set button pressed as buttons funcion */
-		create_message();
 		gpio_init_callback(&button_cb_data, create_message, BIT(button.pin));
 		gpio_add_callback(button.port, &button_cb_data);
 		printk("Set up button at %s pin %d\n", button.port->name, button.pin);
@@ -856,40 +911,11 @@ static int init_button()
 	return ret;
 }
 
-int32_t scale_down_int64(int64_t large_value) {
-    return (int32_t)(large_value / 1000);
-}
-
-bool encode_string(pb_ostream_t* stream, const pb_field_t* field, void* const* arg)
+static void create_message(habit_data message)
 {
-    const char* str = (const char*)(*arg);
-
-    if (!pb_encode_tag_for_field(stream, field))
-        return false;
-
-    return pb_encode_string(stream, (uint8_t*)str, strlen(str));
-}
-
-static void create_message()
-{
-	    // Create a buffer to hold the serialized data
-    uint8_t buffer[128];  // Ensure this buffer is large enough for your data
+	  // Create a buffer to hold the serialized data
+    uint8_t buffer[128];
     pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-		printk("ret: %d\n", date_time_now(&unix_time));
-		
-
-    // Create an instance of HabitData and initialize it
-    habit_data message = habit_data_init_zero;
-
-    // Assign values to the message fields
-		printf("timestamp %d\n", scale_down_int64(unix_time));
-
-    message.device_timestamp = scale_down_int64(unix_time);
-    message.data = 3;
-		message.habit_id.arg = "1714396295426";
-		message.habit_id.funcs.encode = &encode_string;
-    // message.start_timestamp = 123;
-    // message.stop_timestamp = 123456000;
 
     // Encode the message
     bool status = pb_encode(&stream, habit_data_fields, &message);
@@ -898,41 +924,30 @@ static void create_message()
         return;
     }
 
-    printf("Encoded message with size: %zu bytes\n", stream.bytes_written);
+		//define topic based on the thing
+		#define MY_CUSTOM_TOPIC "habit-tracker-data/T3/events"
+		printk("custom topic: %s\n", MY_CUSTOM_TOPIC);
 
-		printf("Serialized message: ");
-    for (size_t i = 0; i < stream.bytes_written; ++i) {
-        printf("%02X ", buffer[i]);
-    }
-    printf("\n");
-		
+		static struct aws_iot_topic_data myTopic = {
+						.str = MY_CUSTOM_TOPIC,
+						.len = strlen(MY_CUSTOM_TOPIC),
+		};
+	
 		printf("send protobuff message \n");
-
-		#define MY_CUSTOM_TOPIC_1 "habit-tracker-data/T3/events"
-		#define MY_CUSTOM_TOPIC_1_IDX 0
-
-		static struct aws_iot_topic_data pub_topics[1] = {
-						[MY_CUSTOM_TOPIC_1_IDX].str = MY_CUSTOM_TOPIC_1,
-						[MY_CUSTOM_TOPIC_1_IDX].len = strlen(MY_CUSTOM_TOPIC_1),
-		};
-
-		struct aws_iot_data tx_data = {
+		struct aws_iot_data data = {
 			.qos = MQTT_QOS_0_AT_MOST_ONCE,
-			.topic = pub_topics[MY_CUSTOM_TOPIC_1_IDX],
+			.topic = myTopic,
+			.ptr = buffer,
+			.len = stream.bytes_written,
 		};
 
-		tx_data.ptr = buffer;
-		tx_data.len = stream.bytes_written;
-
-		LOG_INF("Publishing message: %s to AWS IoT shadow", tx_data.ptr);
-
-		int err = aws_iot_send(&tx_data);
+		LOG_INF("Publishing message: %s to AWS IoT shadow", data.ptr);
+		int err = aws_iot_send(&data);
 		if (err) {
 			LOG_ERR("aws_iot_send, error: %d", err);
 			FATAL_ERROR();
 			return;
 		}
-
     return;
 }
 
@@ -975,7 +990,6 @@ int main(void)
 	}
 
 	/* init the aws connection */
-
 	/* Setup handler for Zephyr NET Connection Manager events. */
 	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
 	net_mgmt_add_event_callback(&l4_cb);
@@ -1010,6 +1024,5 @@ int main(void)
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
 	}
-
 	return 0;
 }
