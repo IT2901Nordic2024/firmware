@@ -45,14 +45,6 @@
 #define AWS_IOT_SHADOW_TOPIC_UPDATE_DELTA "$aws/things/%s/shadow/update/delta"
 #define HABIT_EVENT_TOPIC "habit-tracker-data/%s/events"
 
-/* button */
-#define SW0_NODE DT_ALIAS(sw0)
-#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
-#error "Unsupported board: sw0 devicetree alias is not defined"
-#endif
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
-static struct gpio_callback button_cb_data;
-
 typedef struct settings_data Settings_data; 
 
 void save_side_config(int side, Settings_data side_settings);
@@ -133,6 +125,10 @@ int64_t start_time;
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
 /* button definition */
+#define SW0_NODE DT_ALIAS(sw0)
+#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
+#error "Unsupported board: sw0 devicetree alias is not defined"
+#endif
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
 static struct gpio_callback button_cb_data;
 
@@ -1073,7 +1069,6 @@ static void create_message(habit_data message)
 int main(void)
 {
 	int ret;
-	
 	// initialize led function
 	ret = init_led();
 	// initialize button function
@@ -1093,7 +1088,7 @@ int main(void)
 			return ret;
 	}
 
-	// Print all loaded settings
+	//Print all loaded settings
 	for (int i = 0; i < MAX_SIDES; i++) {
 		printk("Side %d id: %s\n", i, side_settings[i]->id);
 		printk("Side %d type: %s\n", i, side_settings[i]->type);
