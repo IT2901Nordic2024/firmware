@@ -17,6 +17,11 @@
     "device.h": "c",
     "settings_defs.h": "c",
     "types.h": "c",
-    "sensor.h": "c"
+    "sensor.h": "c",
+    "functional": "c",
+    "random": "c",
+    "ostream": "c",
+    "streambuf": "c",
+    "aws_iot.h": "c"
   }
 }
