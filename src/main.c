@@ -56,6 +56,7 @@ static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {
 static struct gpio_callback button_cb_data;
 struct pwm_dt_spec sBuzzer = PWM_DT_SPEC_GET(DT_ALIAS(buzzer_pwn));
 
+
 typedef struct settings_data Settings_data;
 
 /* Register log module */
@@ -221,6 +222,15 @@ static char *get_habit_id(int side)
 }
 
 /* Static functions */
+static void buzzer()
+{
+	int ret;
+	printk("Buzzer\n");
+	ret = pwm_set_dt(&sBuzzer, PWM_HZ(500), PWM_HZ(1000) / 2);
+  // pwm_capture_nsec(&sBuzzer, PWM_HZ(500), PWM_HZ(1000) / 2, 200);
+	//pwm_set_dt(&sBuzzer, PWM_HZ(1000), PWM_HZ(1000) / 2);
+}
+
 static int32_t int64_to_int32(int64_t large_value)
 {
 	// scale down int64 to int32
@@ -807,13 +817,10 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 	case AWS_IOT_EVT_READY:
 		LOG_INF("AWS_IOT_EVT_READY");
 		/* on iot ready create a new thred for start to check the position */
-		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
-				check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO,
-				0, K_NO_WAIT);
+		// k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
+		// 		check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO,
+		// 		0, K_NO_WAIT);
 		/* set button pressed as buttons funcion */
-		gpio_init_callback(&button_cb_data, create_message, BIT(button.pin));
-		gpio_add_callback(button.port, &button_cb_data);
-		printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
@@ -952,15 +959,17 @@ static void create_message(habit_data message)
 	return;
 }
 
+
 int main(void)
 {
-	pwm_set_dt(&sBuzzer, PWM_HZ(1000), PWM_HZ(1000) / 2);
 	int ret;
 	// initialize led function
 	ret = init_led();
 	// initialize button function
 	ret = init_button();
-
+	gpio_init_callback(&button_cb_data, buzzer, BIT(button.pin));
+	gpio_add_callback(button.port, &button_cb_data);
+	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 	ret = ext_sensors_init(impact_handler);
 	if (ret) {
 		printf("Error initializing sensors: %d\n", ret);
