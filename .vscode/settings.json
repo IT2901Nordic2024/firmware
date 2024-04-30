@@ -21,6 +21,7 @@
     "functional": "c",
     "random": "c",
     "ostream": "c",
-    "streambuf": "c"
+    "streambuf": "c",
+    "aws_iot.h": "c"
   }
 }
