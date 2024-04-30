@@ -633,7 +633,6 @@ int send_shadow_update_msg(char *msg){
 	tx_data.ptr = msg;
 	tx_data.len = strlen(msg);
 
-	LOG_INF("Publishing message: %s to AWS IoT shadow", msg);
 	int err = aws_iot_send(&tx_data);
 	if (err) {
 		LOG_ERR("aws_iot_send, error: %d", err);
@@ -813,23 +812,22 @@ static int start_settings_subsystem()
 }
 
 static void parse_config_json(const char *json){
-	printk("Parsing JSON\n");
-    cJSON *root = cJSON_Parse(json);
-    if (root == NULL) {
-        const char *error_ptr = cJSON_GetErrorPtr();
-        if (error_ptr != NULL) {
-            printk("Error before: %s\n", error_ptr);
-        }
-        return;
-    }
+	cJSON *root = cJSON_Parse(json);
+	if (root == NULL) {
+			const char *error_ptr = cJSON_GetErrorPtr();
+			if (error_ptr != NULL) {
+					printk("Error before: %s\n", error_ptr);
+			}
+			return;
+	}
 
-    // Get version
-    cJSON *version = cJSON_GetObjectItem(root, "version");
-    if (cJSON_IsNumber(version)) {
-        printk("Version: %d\n", version->valueint);
-    } else {
-        printk("Version is not a number\n");
-    }
+	// Get version
+	cJSON *version = cJSON_GetObjectItem(root, "version");
+	if (cJSON_IsNumber(version)) {
+			printk("Version: %d\n", version->valueint);
+	} else {
+			printk("Version is not a number\n");
+	}
 
 	// Get timestamp
 	cJSON *timestamp = cJSON_GetObjectItem(root, "timestamp");
@@ -846,7 +844,6 @@ static void parse_config_json(const char *json){
         for (cJSON *side_config = state->child; side_config != NULL; side_config = side_config->next) {
             // Get side number
             int side = atoi(side_config->string);
-			printk("Side: %d\n", side);
             // Get id and type
             cJSON *id = cJSON_GetObjectItem(side_config, "id");
             cJSON *type = cJSON_GetObjectItem(side_config, "type");
@@ -858,7 +855,6 @@ static void parse_config_json(const char *json){
 					return;
 				}
 				strcpy(side_settings[side]->id, id->valuestring);
-				printk("Id: %s\n", side_settings[side]->id);
 
 				if (type != NULL && cJSON_IsString(type)) {
                 if (strcmp(type->valuestring, "TIME") == 0) {
@@ -872,10 +868,8 @@ static void parse_config_json(const char *json){
 				save_side_config(side, *side_settings[side]);
             } else {
 				printk("Throwing away side config due to invalid id or type\n");
-			}
-		
-        }
-		
+				}
+      }
     } else {
         printk("State is not an object\n");
     }
