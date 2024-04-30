@@ -540,26 +540,18 @@ static void shadow_update_work_fn(struct k_work *work)
 	}
 }
 
-/* System Workqueue handlers. */
-/* put shadow update work infornt of the kwork queue that sends event to aws */
-// static void event_trigger()
-// {
-// 	printk("event_trigger\n");
-// 	/* send shadow_update_work in front of the queue */
-// 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
-// }
-
-
 static void counter_stop_fn(struct k_work *work)
 {
-	habit_data message = habit_data_init_zero;
-	date_time_now(&unix_time);
-	message.device_timestamp = int64_to_int32(unix_time);
-	message.data = occurrence_count;
-	message.habit_id.arg = get_habit_id(side);
-	message.habit_id.funcs.encode = &encode_string;
+	if (occurrence_count != 0) {
+		habit_data message = habit_data_init_zero;
+		date_time_now(&unix_time);
+		message.device_timestamp = int64_to_int32(unix_time);
+		message.data = occurrence_count;
+		message.habit_id.arg = get_habit_id(side);
+		message.habit_id.funcs.encode = &encode_string;
+		create_message(message);
+	}
 	occurrence_count = 0;
-	create_message(message);
 }
 
 static void impact_handler(const struct ext_sensor_evt *const evt)
