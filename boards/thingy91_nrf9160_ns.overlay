@@ -15,11 +15,11 @@
 	chosen {
 		nordic,modem-trace-uart = &uart1;
 	};
-	
+
 	/* ... */
 	/* These aliases are provided for compatibility with samples */
 	aliases {
-	/* ... */
+		/* ... */
 		sw0 = &button0;
 	};
 };
@@ -32,6 +32,16 @@
 		iaq-sensor = &bme680;
 		accelerometer = &adxl362;
 		impact-sensor = &adxl372;
+		buzzer-pwn = &buzzer;
+	};
+	pwmbuzzer {
+		compatible = "pwm-leds";
+		status = "okay";
+
+		buzzer: buzzer_pwm {
+			pwms = <&pwm1 0 PWM_HZ(880) PWM_POLARITY_NORMAL>;
+			label = "PWM_1";
+		};
 	};
 };
 
@@ -54,7 +64,7 @@
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/devices/dts/flash_partitions.html
+	 * http: //docs.zephyrproject.org/devices/dts/flash_partitions.html
 	 */
 	partitions {
 		compatible = "fixed-partitions";
