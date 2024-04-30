@@ -7,9 +7,8 @@
 #define MAX_SIDES 11
 
 struct settings_data {
-    int32_t timestamp;
-    int32_t id;
-    int32_t type;
+    char *id;
+    char *type;
 };
 
 extern struct settings_data side_0_settings;

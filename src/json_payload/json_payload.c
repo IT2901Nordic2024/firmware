@@ -27,11 +27,11 @@ int json_payload_construct(char *message, size_t size, struct payload *payload)
 		JSON_OBJ_DESCR_OBJECT(struct payload, state, reported),
 	};
 
-	err = json_obj_encode_buf(root, ARRAY_SIZE(root), payload, message, size);
-	if (err) {
-		LOG_ERR("json_obj_encode_buf, error: %d", err);
-		return err;
-	}
+    err = json_obj_encode_buf(root, ARRAY_SIZE(root), payload, message, size);
+    if (err) {
+        LOG_ERR("json_obj_encode_buf, error: %d", err);
+        return err;
+    }
 
-	return 0;
+    return 0;
 }

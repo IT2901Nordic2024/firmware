@@ -12,7 +12,7 @@ config AWS_IOT_SAMPLE_APP_VERSION
 
 config AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX
 	int "Maximum size of JSON messages"
-	default 200
+	default 1000
 	help
 	  Maximum size of JSON messages that are sent to AWS IoT.
 

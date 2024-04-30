@@ -1,19 +1,20 @@
 #include "settings_defs.h"
 #include <errno.h>
 
-#define DEFAULT_TYPE_VALUE 0
+#define DEFAULT_TYPE_VALUE ""
+#define DEFAULT_ID_VALUE ""
 
-struct settings_data side_0_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_1_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_2_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_3_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_4_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_5_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_6_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_7_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_8_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_9_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
-struct settings_data side_10_settings = { .timestamp = 0, .id = 0, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_0_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_1_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_2_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_3_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_4_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_5_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_6_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_7_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_8_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_9_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
+struct settings_data side_10_settings = { .id = DEFAULT_ID_VALUE, .type = DEFAULT_TYPE_VALUE };
 
 struct settings_data *side_settings[MAX_SIDES] = {
     &side_0_settings,
@@ -39,16 +40,6 @@ int side_config_settings_set(const char *name, size_t len, settings_read_cb read
         }
 
         rc = read_cb(cb_arg, &side_settings->type, sizeof(side_settings->type));
-        if (rc >= 0) {
-            return 0;
-        }
-        return rc;
-    } else if (settings_name_steq(name, "timestamp", &next) && !next) {
-        if (len != sizeof(side_settings->timestamp)) {
-            return -EINVAL;
-        }
-
-        rc = read_cb(cb_arg, &side_settings->timestamp, sizeof(side_settings->timestamp));
         if (rc >= 0) {
             return 0;
         }
