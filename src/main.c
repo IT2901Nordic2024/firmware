@@ -967,7 +967,7 @@ int play_tone(int frequency, int duration)
 		return -1;
 	}
 	uint32_t pwm_period_ns = NSEC_PER_SEC / frequency;
-	uint32_t pwm_duty_cycle_ns = pwm_period_ns / 2;
+	uint32_t pwm_duty_cycle_ns = pwm_period_ns / 16;
 	// Set the PWM period and duty cycle
 	if (pwm_set_dt(&sBuzzer, pwm_period_ns, pwm_duty_cycle_ns)) {
         printk("Error: Failed to set PWM period and duty cycle\n");
@@ -1058,6 +1058,7 @@ int main(void)
 {
 	int ret;
 
+	alternative_boot_sound();
 	boot_sound();
 
 	// initialize led function
