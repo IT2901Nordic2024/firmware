@@ -93,12 +93,6 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
 /* additional definitions */
-//define topic based on the thing
-#define MY_CUSTOM_TOPIC "habit-tracker-data/T3/events"
-static struct aws_iot_topic_data myTopic = {
-				.str = MY_CUSTOM_TOPIC,
-				.len = strlen(MY_CUSTOM_TOPIC),
-};
 
 /* Sensor definitions */
 static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
@@ -204,78 +198,6 @@ static K_WORK_DELAYABLE_DEFINE(stop_timer, stop_timer_fn);
 K_THREAD_STACK_DEFINE(stack_area, 2048);
 struct k_thread check_pos_data;
 
-/* mock data */
-// temporarly values for sides. "" is default, "COUNT" is count, "TIMER" is timer
-char *side_0[] = {"COUNT","1714396295426"};
-char *side_1[] = {"TIME","1714396736027"};
-char *side_2[] = {"COUNT","1714402198197"};
-char *side_3[] = {"COUNT","1714402288037"};
-char *side_4[] = {"COUNT","1714402306888"};
-char *side_5[] = {"TIME","1714402317862"};
-char *side_6[] = {"TIME","1714402326610"};
-char *side_7[] = {"TIME","1714402338234"};
-char *side_8[] = {"",""};
-char *side_9[] = {"",""};
-char *side_10[] = {"",""};
-
-// returns the value of the side based on the side number
-static char *get_side_value(int side) {
-	switch (side) {
-		case 1:
-			return side_0[0];
-		case 2:
-			return side_1[0];
-		case 3:
-			return side_2[0];
-		case 4:
-			return side_3[0];
-		case 5:
-			return side_4[0];
-		case 6:
-			return side_5[0];
-		case 7:
-			return side_6[0];
-		case 8:
-			return side_7[0];
-		case 9:
-			return side_8[0];
-		case 10:
-			return side_9[0];
-		case 11:
-			return side_10[0];
-		default:
-			return "";
-	}
-}
-//returns the habit based on side
-static char *get_habit_id(int side) {
-	switch (side) {
-		case 1:
-			return side_0[1];
-		case 2:
-			return side_1[1];
-		case 3:
-			return side_2[1];
-		case 4:
-			return side_3[1];
-		case 5:
-			return side_4[1];
-		case 6:
-			return side_5[1];
-		case 7:
-			return side_6[1];
-		case 8:
-			return side_7[1];
-		case 9:
-			return side_8[1];
-		case 10:
-			return side_9[1];
-		case 11:
-			return side_10[1];
-		default:
-			return "";
-	}
-}
 
 /* Static functions */
 static int32_t int64_to_int32(int64_t large_value) {
@@ -1038,6 +960,13 @@ static int init_button()
 
 static void create_message(habit_data message)
 {
+	//define topic based on the thing
+	char event_topic[128];  
+	snprintf(event_topic, sizeof(event_topic), HABIT_EVENT_TOPIC, CONFIG_AWS_IOT_CLIENT_ID_STATIC);
+	struct aws_iot_topic_data myTopic = {
+					.str = event_topic,
+					.len = strlen(event_topic),
+	};
 	// Create a buffer to hold the serialized data
 	uint8_t buffer[128];
 	pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
