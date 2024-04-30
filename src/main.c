@@ -952,10 +952,107 @@ static void create_message(habit_data message)
 	return;
 }
 
+int play_tone(int frequency, int duration)
+{
+	if (!pwm_is_ready_dt(&sBuzzer)) {
+		printk("Error: PWM device %s is not ready\n",
+		       sBuzzer.dev->name);
+		return -1;
+	}
+	uint32_t pwm_period_ns = NSEC_PER_SEC / frequency;
+	uint32_t pwm_duty_cycle_ns = pwm_period_ns / 2;
+	// Set the PWM period and duty cycle
+	if (pwm_set_dt(&sBuzzer, pwm_period_ns, pwm_duty_cycle_ns)) {
+        printk("Error: Failed to set PWM period and duty cycle\n");
+        return -2;
+    }
+
+	// Play the tone for the specified duration
+	k_sleep(K_MSEC(duration));
+
+	// Turn off the PWM signal
+	if (pwm_set_dt(&sBuzzer, 0, 0)) {
+        printk("Error: Failed to turn off note\n");
+        return -3;
+    }
+
+	return 0;
+}
+
+void boot_sound() {
+    play_tone(264, 250);
+    k_sleep(K_MSEC(500));
+    play_tone(264, 250);
+    k_sleep(K_MSEC(250));
+    play_tone(297, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(264, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(352, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(330, 2000);
+    k_sleep(K_MSEC(500));
+    play_tone(264, 250);
+    k_sleep(K_MSEC(500));
+    play_tone(264, 250);
+    k_sleep(K_MSEC(250));
+    play_tone(297, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(264, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(396, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(352, 2000);
+    k_sleep(K_MSEC(500));
+    play_tone(264, 250);
+    k_sleep(K_MSEC(500));
+    play_tone(264, 250);
+    k_sleep(K_MSEC(250));
+    play_tone(264, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(440, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(352, 500);
+    k_sleep(K_MSEC(250));
+    play_tone(352, 250);
+    k_sleep(K_MSEC(250));
+    play_tone(330, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(297, 2000);
+    k_sleep(K_MSEC(500));
+    play_tone(466, 250);
+    k_sleep(K_MSEC(500));
+    play_tone(466, 250);
+    k_sleep(K_MSEC(250));
+    play_tone(440, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(352, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(396, 1000);
+    k_sleep(K_MSEC(250));
+    play_tone(352, 2000);
+    k_sleep(K_MSEC(250));
+}
+
+int alternative_boot_sound(){
+	int ret;
+	ret = play_tone(1760, 100);
+	
+	ret = play_tone(2637, 500);
+
+	k_sleep(K_MSEC(1000));
+	return ret;
+}
+
+
+
+
 int main(void)
 {
-	pwm_set_dt(&sBuzzer, PWM_HZ(1000), PWM_HZ(1000) / 2);
 	int ret;
+
+	boot_sound();
+
 	// initialize led function
 	ret = init_led();
 	// initialize button function
