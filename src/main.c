@@ -136,16 +136,22 @@ static struct net_mgmt_event_callback conn_cb;
 static void shadow_update_work_fn(struct k_work *work);
 static void connect_work_fn(struct k_work *work);
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
-static void counter_stop(struct k_work *work);
-static void check_position();
+static void counter_stop_fn(struct k_work *work);
+static void set_newSide_fn(struct k_work *work);
+static void start_timer_fn(struct k_work *work);
+static void stop_timer_fn(struct k_work *work);
 static void turn_led_off(struct k_work *work);
+static void check_position();
 static void create_message();
 
 /* Work items used to control some aspects of the sample. */
 static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
-static K_WORK_DELAYABLE_DEFINE(counter_stop_work, counter_stop);
+static K_WORK_DELAYABLE_DEFINE(counter_stop, counter_stop_fn);
+static K_WORK_DELAYABLE_DEFINE(set_newSide, set_newSide_fn);
+static K_WORK_DELAYABLE_DEFINE(start_timer, start_timer_fn);
+static K_WORK_DELAYABLE_DEFINE(stop_timer, stop_timer_fn);
 
 /* Create thread for checking the position of the device */
 K_THREAD_STACK_DEFINE(stack_area, 2048);
@@ -544,7 +550,7 @@ static void shadow_update_work_fn(struct k_work *work)
 // }
 
 
-static void counter_stop(struct k_work *work)
+static void counter_stop_fn(struct k_work *work)
 {
 	habit_data message = habit_data_init_zero;
 	date_time_now(&unix_time);
@@ -564,18 +570,18 @@ static void impact_handler(const struct ext_sensor_evt *const evt)
 					if (counter_active) {
 						printf("Impact detected: %6.2f g\n", evt->value);
 						// cancel, count one, activate led, and rescedule with 5 secound delay
-						(void)k_work_cancel_delayable(&counter_stop_work);
+						k_work_cancel_delayable(&counter_stop);
 						occurrence_count ++;
 						gpio_pin_set_dt(&led, 1);
 						k_work_schedule(&led_off_work, K_SECONDS(0.2));
-						(void)k_work_reschedule(&counter_stop_work, K_SECONDS(5));
+						k_work_reschedule(&counter_stop, K_SECONDS(5));
 					}
 			default:
 					break;
 	}
 }
 
-static void start_timer()
+static void start_timer_fn(struct k_work *work)
 {
 	//start_time and send event trigger
 	int ret;
@@ -589,17 +595,14 @@ static void start_timer()
 	}
 	else {
 		LOG_ERR("Error getting time");
-		k_msleep(2000);
-		start_timer();
 	}
 
 }
 
-static void stop_timer() 
+static void stop_timer_fn(struct k_work *work) 
 {
 	//stop_time and send event trigger
 	int ret;
-	ret = date_time_now(&unix_time);
 	//checks if time is updated else try again
 	if (ret == 0) {
 		printk("Stopping timer\n");
@@ -614,10 +617,23 @@ static void stop_timer()
 	}
 	else {
 		LOG_ERR("Error getting time");
-		k_msleep(2000);
-		stop_timer();
 	}
 }
+
+static void set_newSide_fn(struct k_work *work)
+{
+	side = newSide;
+	// if the new side is count start the count
+	if (strcmp(get_side_value(side), "COUNT") == 0) {
+		counter_active = true;
+	}
+	// if the new side is time start the timer
+	if (strcmp(get_side_value(side), "TIME") == 0) {
+		printk("Starting timerrrrr\n");
+		k_work_reschedule(&start_timer, K_NO_WAIT);
+	}
+}
+
 
 /* function to check side, runs in separate tread */
 static void check_position() 
@@ -629,24 +645,14 @@ static void check_position()
 					// if the prew side is count stop the count
 					if (strcmp(get_side_value(side), "COUNT") == 0) {
 						counter_active = false;
-						(void)k_work_reschedule(&counter_stop_work, K_NO_WAIT);
+						k_work_reschedule(&counter_stop, K_NO_WAIT);
 					}
 					// if the prew side is time stop the timer
 					if (strcmp(get_side_value(side), "TIME") == 0) {
-						stop_timer();
-						k_msleep(100);
+						k_work_reschedule(&stop_timer, K_NO_WAIT);
 					}
 					// set the new side
-					side = newSide;
-					// if the new side is count start the count
-					if (strcmp(get_side_value(side), "COUNT") == 0) {
-						counter_active = true;
-					}
-					// if the new side is time start the timer
-					if (strcmp(get_side_value(side), "TIME") == 0) {
-						start_timer(
-						);
-					}
+					k_work_reschedule(&set_newSide, K_NO_WAIT);
         }
     }
 }
