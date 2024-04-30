@@ -543,7 +543,7 @@ static void start_timer_fn(struct k_work *work)
 static void stop_timer_fn(struct k_work *work) 
 {
 	//stop_time and create message
-	int ret;
+	int ret = date_time_now(&unix_time);
 	if (ret == 0) {
 		printk("Stopping timer\n");
 		//create message
@@ -570,7 +570,6 @@ static void set_newSide_fn(struct k_work *work)
 	}
 	// if the new side is time start the timer
 	if (strcmp(get_side_value(side), "TIME") == 0) {
-		printk("Starting timerrrrr\n");
 		k_work_reschedule(&start_timer, K_NO_WAIT);
 	}
 }
