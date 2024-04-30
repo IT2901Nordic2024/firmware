@@ -134,7 +134,7 @@ static struct gpio_callback button_cb_data;
 
 /* side definitions */
 // Side of the device for sending based on rotation
-int side = 0;
+int acctiveSide = 0;
 int newSide;
 // Real-time side
 int rt_side;
@@ -538,7 +538,7 @@ static void counter_stop_fn(struct k_work *work)
 		date_time_now(&unix_time);
 		message.device_timestamp = int64_to_int32(unix_time);
 		message.data = occurrence_count;
-		message.habit_id.arg = get_habit_id(side);
+		message.habit_id.arg = side_settings[acctiveSide - 1]->id;
 		message.habit_id.funcs.encode = &encode_string;
 		create_message(message);
 	}
@@ -589,7 +589,7 @@ static void stop_timer_fn(struct k_work *work)
 		//create message
 		habit_data message = habit_data_init_zero;
 		message.device_timestamp = int64_to_int32(unix_time);
-		message.habit_id.arg = get_habit_id(side);
+		message.habit_id.arg = side_settings[acctiveSide - 1]->id;
 		message.habit_id.funcs.encode = &encode_string;
 		message.start_timestamp = int64_to_int32(start_time);
 		message.stop_timestamp = int64_to_int32(unix_time);
@@ -603,13 +603,13 @@ static void stop_timer_fn(struct k_work *work)
 
 static void set_newSide_fn(struct k_work *work)
 {
-	side = newSide;
+	acctiveSide = newSide;
 	// if the new side is count start the count
-	if (strcmp(get_side_value(side), "COUNT") == 0) {
+	if (strcmp(side_settings[acctiveSide - 1]->type, "COUNT") == 0) {
 		counter_active = true;
 	}
 	// if the new side is time start the timer
-	if (strcmp(get_side_value(side), "TIME") == 0) {
+	if (strcmp(side_settings[acctiveSide - 1]->type, "TIME") == 0) {
 		k_work_reschedule(&start_timer, K_NO_WAIT);
 	}
 }
@@ -621,14 +621,14 @@ static void check_position()
 	while (true) {
 		newSide = get_side(sensor);
 		// if side is changed and the new side is not -1
-		if (newSide != -1 && side != newSide) {
+		if (newSide != -1 && acctiveSide != newSide) {
 			// if the prew side is count stop the count
-			if (strcmp(get_side_value(side), "COUNT") == 0) {
+			if (strcmp(side_settings[acctiveSide - 1]->type, "COUNT") == 0) {
 				counter_active = false;
 				k_work_reschedule(&counter_stop, K_NO_WAIT);
 			}
 			// if the prew side is time stop the timer
-			if (strcmp(get_side_value(side), "TIME") == 0) {
+			if (strcmp(side_settings[acctiveSide - 1]->type, "TIME") == 0) {
 				k_work_reschedule(&stop_timer, K_NO_WAIT);
 			}
 			// set the new side
