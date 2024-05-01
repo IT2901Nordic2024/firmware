@@ -3,7 +3,6 @@
  *
  * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
-
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/dfu/mcuboot.h>
@@ -18,20 +17,17 @@
 #include <modem/modem_info.h>
 #include "json_payload.h"
 #include "settings_defs.h"
-
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/drivers/sensor.h>
 #include <ext_sensors.h>
-
 #include <date_time.h>
 #include <zephyr/drivers/pwm.h>
 
 /*Settings and NVS*/
 #include <zephyr/settings/settings.h>
-#include <zephyr/fs/nvs.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/device.h>
@@ -39,25 +35,53 @@
 #include <inttypes.h>
 #include <zephyr/sys/printk.h>
 #include "../ext_sensors/ext_sensors.h"
-
-/*Protobuf*/
 #include <pb.h>
 #include <pb_common.h>
 #include <pb_encode.h>
 #include <pb_decode.h>
 #include <src/data.pb.h>
 
-/* button */
-#define SW0_NODE DT_ALIAS(sw0)
-#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
-#error "Unsupported board: sw0 devicetree alias is not defined"
-#endif
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
-static struct gpio_callback button_cb_data;
+/*CJson*/
+#include <cJSON.h>
+
+// AWS IoT Topics
+#define AWS_IOT_SHADOW_TOPIC_UPDATE_DELTA "$aws/things/%s/shadow/update/delta"
+#define HABIT_EVENT_TOPIC "habit-tracker-data/%s/events"
 struct pwm_dt_spec sBuzzer = PWM_DT_SPEC_GET(DT_ALIAS(buzzer_pwn));
 
 
-typedef struct settings_data Settings_data;
+typedef struct settings_data Settings_data; 
+
+void save_side_config(int side, Settings_data side_settings);
+
+char *id_str;
+
+bool first_run = true;
+
+struct side_item *side_items[MAX_SIDES];
+
+int payload_side_count = 0;
+
+uint16_t config_version;
+
+// Settings handling for config version
+int config_version_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg)
+{
+	if (len != sizeof(config_version)) {
+		return -EINVAL;
+	}
+
+	int rc = read_cb(cb_arg, &config_version, sizeof(config_version));
+	if (rc >= 0) {
+		return 0;
+	}
+	return rc;
+}
+
+struct settings_handler config_version_conf = {
+	.name = "config_version",
+	.h_set = config_version_set,
+};
 
 /* Register log module */
 LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
@@ -65,7 +89,6 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 /* Macros used to subscribe to specific Zephyr NET management events. */
 #define L4_EVENT_MASK	      (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
 #define CONN_LAYER_EVENT_MASK (NET_EVENT_CONN_IF_FATAL_ERROR)
-
 #define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
 
 /* Macro called upon a fatal error, reboots the device. */
@@ -75,26 +98,14 @@ LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
 /* additional definitions */
-// define topic based on the thing
-#define MY_CUSTOM_TOPIC "habit-tracker-data/T3/events"
 
-static struct aws_iot_topic_data myTopic = {
-	.str = MY_CUSTOM_TOPIC,
-	.len = strlen(MY_CUSTOM_TOPIC),
-};
-
-/*
- * Sensor variables
- */
-/* Sensor device */
+/* Sensor definitions */
 static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
-/* Sensor channels */
 static const enum sensor_channel channels[] = {
 	SENSOR_CHAN_ACCEL_X,
 	SENSOR_CHAN_ACCEL_Y,
 	SENSOR_CHAN_ACCEL_Z,
 };
-/* Sensor data */
 struct sensor_value accel[3];
 char accelX[10];
 char accelY[10];
@@ -108,27 +119,60 @@ bool counter_active = false;
 int64_t unix_time;
 int64_t start_time;
 
-/* LED */
+/* led definition */
 #define LED0_NODE DT_ALIAS(led0)
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
-/* Side of the device for sending based on rotation */
-int side = 0;
-int newSide;
-int correct_side;
+/* button definition */
+#define SW0_NODE DT_ALIAS(sw0)
+#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
+#error "Unsupported board: sw0 devicetree alias is not defined"
+#endif
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
+static struct gpio_callback button_cb_data;
 
-// temporarly values for sides. "" is default, "COUNT" is count, "TIMER" is timer
-char *side_0[] = {"COUNT", "1714396295426"};
-char *side_1[] = {"TIME", "1714396736027"};
-char *side_2[] = {"COUNT", "1714402198197"};
-char *side_3[] = {"COUNT", "1714402288037"};
-char *side_4[] = {"COUNT", "1714402306888"};
-char *side_5[] = {"TIME", "1714402317862"};
-char *side_6[] = {"TIME", "1714402326610"};
-char *side_7[] = {"TIME", "1714402338234"};
-char *side_8[] = {"", ""};
-char *side_9[] = {"", ""};
-char *side_10[] = {"", ""};
+/* side definitions */
+// Side of the device for sending based on rotation
+int acctiveSide = 0;
+int newSide;
+// Real-time side
+int rt_side;
+
+double Xaccel[10] = {};
+double Yaccel[10] = {};
+double Zaccel[10] = {};
+
+double medianX;
+double medianY;
+double medianZ;
+
+/*Config for each side*/
+struct each_side {
+	double accelX;
+	double accelY;
+	double accelZ;
+};
+
+/*Normal vectors for each side*/
+struct each_side normal_vectors[12] = {
+	{-0.003696148, -0.069007951, -0.996817534}, // side 0
+	{0.879237385, -0.308156155, -0.361714449},  // side 1
+	{-0.024281719, -0.90438758, -0.422177015},  // side 2
+	{-0.884967095, -0.232578156, -0.400957651}, // side 3
+	{-0.553576905, 0.735285768, -0.389626839},  // side 4
+	{0.525613609, 0.741611336, -0.415332151},   // side 5
+	{-0.541858156, -0.691422294, 0.476691277},  // side 6
+	{0.475564405, -0.757096215, 0.442519528},   // side 7
+	{0.810239622, 0.211181093, 0.540259636},    // side 8
+	{-0.031841904, 0.852591043, 0.519405125},   // side 9
+	{-0.857683398, 0.311294211, 0.408629604},   // side 10
+	{0.005361934, -0.033163197, 0.995770246},   // side 11
+};
+
+/*help values to store double values to send to aws*/
+char median_values_X[10];
+char median_values_Y[10];
+char median_values_Z[10];
 
 /* Zephyr NET management event callback structures. */
 static struct net_mgmt_event_callback l4_cb;
@@ -159,67 +203,7 @@ static K_WORK_DELAYABLE_DEFINE(stop_timer, stop_timer_fn);
 K_THREAD_STACK_DEFINE(stack_area, 2048);
 struct k_thread check_pos_data;
 
-/* mock data */
-// returns the value of the side based on the side number
-static char *get_side_value(int side)
-{
-	switch (side) {
-	case 1:
-		return side_0[0];
-	case 2:
-		return side_1[0];
-	case 3:
-		return side_2[0];
-	case 4:
-		return side_3[0];
-	case 5:
-		return side_4[0];
-	case 6:
-		return side_5[0];
-	case 7:
-		return side_6[0];
-	case 8:
-		return side_7[0];
-	case 9:
-		return side_8[0];
-	case 10:
-		return side_9[0];
-	case 11:
-		return side_10[0];
-	default:
-		return "";
-	}
-}
-// returns the habit based on side
-static char *get_habit_id(int side)
-{
-	switch (side) {
-	case 1:
-		return side_0[1];
-	case 2:
-		return side_1[1];
-	case 3:
-		return side_2[1];
-	case 4:
-		return side_3[1];
-	case 5:
-		return side_4[1];
-	case 6:
-		return side_5[1];
-	case 7:
-		return side_6[1];
-	case 8:
-		return side_7[1];
-	case 9:
-		return side_8[1];
-	case 10:
-		return side_9[1];
-	case 11:
-		return side_10[1];
-	default:
-		return "";
-	}
-}
+
 
 /* Static functions */
 static void buzzer()
@@ -229,6 +213,77 @@ static void buzzer()
 	ret = pwm_set_dt(&sBuzzer, PWM_HZ(500), PWM_HZ(1000) / 2);
   // pwm_capture_nsec(&sBuzzer, PWM_HZ(500), PWM_HZ(1000) / 2, 200);
 	//pwm_set_dt(&sBuzzer, PWM_HZ(1000), PWM_HZ(1000) / 2);
+}
+
+static int play_tone(int frequency, int duration, int volume)
+{
+	if (!pwm_is_ready_dt(&sBuzzer)) {
+		printk("Error: PWM device %s is not ready\n",
+		       sBuzzer.dev->name);
+		return -1;
+	}
+	
+	int division_factor = 32 - volume / 3;
+	if (volume > 95) {
+		division_factor = 1;
+	} else if (volume < 5) {
+		division_factor = 32;
+	}
+	uint32_t pwm_period_ns = NSEC_PER_SEC / frequency;
+	uint32_t pwm_duty_cycle_ns = pwm_period_ns / division_factor;
+	// Set the PWM period and duty cycle
+	if (pwm_set_dt(&sBuzzer, pwm_period_ns, pwm_duty_cycle_ns)) {
+        printk("Error: Failed to set PWM period and duty cycle\n");
+        return -2;
+    }
+
+	// Play the tone for the specified duration
+	k_sleep(K_MSEC(duration));
+
+	// Turn off the PWM signal
+	if (pwm_set_dt(&sBuzzer, 0, 0)) {
+        printk("Error: Failed to turn off note\n");
+        return -3;
+    }
+
+	return 0;
+}
+
+static int config_received_sound(){
+	int ret;
+	ret = play_tone(1760, 100, 50);
+	
+	ret = play_tone(2637, 500, 50);
+
+	return ret;
+}
+
+static int count_sound() {
+	int ret;
+	ret = play_tone(1000, 100, 25);
+	return ret;
+}
+
+static int time_start_sound(){
+	int ret;
+	ret = play_tone(500, 50, 50);
+	ret = play_tone(600, 50, 50);
+	ret = play_tone(700, 50, 50);
+	ret = play_tone(800, 50, 50);
+	ret = play_tone(900, 50, 50);
+	ret = play_tone(1000, 50, 50);
+	return ret;
+}
+
+static int time_stop_sound(){
+	int ret;
+	ret = play_tone(1000, 50, 50);
+	ret = play_tone(900, 50, 50);
+	ret = play_tone(800, 50, 50);
+	ret = play_tone(700, 50, 50);
+	ret = play_tone(600, 50, 50);
+	ret = play_tone(500, 50, 50);
+	return ret;
 }
 
 static int32_t int64_to_int32(int64_t large_value)
@@ -253,75 +308,7 @@ static void turn_led_off(struct k_work *work)
 	gpio_pin_set_dt(&led, 0);
 }
 
-static int fetch_accels(const struct device *dev)
-{
-	/*
-	 *	Fetch sensor data from the accelerometer sensor
-	 *	saves and prints the sensor data as string to be sent to AWS IoT
-	 */
-	int ret;
-	/*	Check if device is ready, if not return 0	*/
-	if (!device_is_ready(dev)) {
-		printk("sensor: device not ready.\n");
-		return 0;
-	} else {
-		printk("sensor: device ready.\n");
-	}
-
-	ret = sensor_sample_fetch(dev);
-	if (ret < 0) {
-		printk("sensor_sample_fetch() failed: %d\n", ret);
-		return ret;
-	}
-
-	/* Get sensor data */
-	for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
-		ret = sensor_channel_get(dev, channels[i], &accel[i]);
-		if (ret < 0) {
-			printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
-			return ret;
-		}
-	}
-	snprintf(accelX, sizeof(accelX), "%f", sensor_value_to_double(&accel[0]));
-	snprintf(accelY, sizeof(accelY), "%f", sensor_value_to_double(&accel[1]));
-	snprintf(accelZ, sizeof(accelZ), "%f", sensor_value_to_double(&accel[2]));
-
-	return 0;
-}
-
-double Xaccel[10] = {};
-double Yaccel[10] = {};
-double Zaccel[10] = {};
-
-double medianX;
-double medianY;
-double medianZ;
-
-/*Config for each side*/
-
-struct each_side {
-	double accelX;
-	double accelY;
-	double accelZ;
-};
-
-/*Normal vectors for each side*/
-struct each_side normal_vectors[12] = {
-	{-0.003696148, -0.069007951, -0.996817534}, // side 0
-	{0.879237385, -0.308156155, -0.361714449},  // side 1
-	{-0.024281719, -0.90438758, -0.422177015},  // side 2
-	{-0.884967095, -0.232578156, -0.400957651}, // side 3
-	{-0.553576905, 0.735285768, -0.389626839},  // side 4
-	{0.525613609, 0.741611336, -0.415332151},   // side 5
-	{-0.541858156, -0.691422294, 0.476691277},  // side 6
-	{0.475564405, -0.757096215, 0.442519528},   // side 7
-	{0.810239622, 0.211181093, 0.540259636},    // side 8
-	{-0.031841904, 0.852591043, 0.519405125},   // side 9
-	{-0.857683398, 0.311294211, 0.408629604},   // side 10
-	{0.005361934, -0.033163197, 0.995770246},   // side 11
-};
-
-int compare(const void *a, const void *b)
+static int compare(const void *a, const void *b)
 {
 	double *double_a = (double *)a;
 	double *double_b = (double *)b;
@@ -336,7 +323,7 @@ int compare(const void *a, const void *b)
 }
 
 /* Function to calculate median*/
-double calculate_median(double accel[], int array_size)
+static double calculate_median(double accel[], int array_size)
 {
 	// sort list
 	qsort(accel, array_size, sizeof(int), compare);
@@ -350,13 +337,13 @@ double calculate_median(double accel[], int array_size)
 }
 
 /*Calculate dot product of two vectors*/
-double vector_dot_product(double vector1[], double vector2[])
+static double vector_dot_product(double vector1[], double vector2[])
 {
 	return vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector2[2];
 }
 
 /*Returns what side is up on the dodd*/
-int find_what_side(struct each_side sides[], int number_of_sides)
+static int find_what_side(struct each_side sides[], int number_of_sides)
 {
 
 	double median_vector[3] = {medianX, medianY, medianZ};
@@ -377,13 +364,8 @@ int find_what_side(struct each_side sides[], int number_of_sides)
 	return -1; // error if valus are not in range
 }
 
-/*help values to store double values to send to aws*/
-char median_values_X[10];
-char median_values_Y[10];
-char median_values_Z[10];
-
 /*Use a median filter to remove noise from accel values*/
-void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
+static void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
 {
 	int ret;
 
@@ -428,9 +410,8 @@ static int get_side(const struct device *dev)
 	// apply median filter to accel values
 	sampling_filter(10, dev, 100);
 	// find what side is up
-	correct_side = find_what_side(normal_vectors, 12);
-	// printk("Side: %i \n", correct_side);
-	return correct_side;
+	rt_side = find_what_side(normal_vectors, 12);
+	return rt_side;
 }
 
 static int app_topics_subscribe(void)
@@ -503,21 +484,30 @@ static int aws_iot_client_init(void)
 static void shadow_update_work_fn(struct k_work *work)
 {
 	int err;
-	char message[CONFIG_AWS_IOT_SAMPLE_JSON_MESSAGE_SIZE_MAX] = {0};
-	/* Fetch and send sensor data */
-	// fetch_accels(sensor);
-	struct payload payload = {
-		.state.reported.uptime = k_uptime_get(),
-	};
+	// TODO: Send side config settings to AWS
+	cJSON *root = cJSON_CreateObject();
+	cJSON *state = cJSON_CreateObject();
+	
+	if (config_version == 0) {
+		cJSON *reported = cJSON_CreateNull();
+	} else {
+	cJSON *reported = cJSON_CreateObject();
 
-	occurrence_count = 0;
-
-	err = json_payload_construct(message, sizeof(message), &payload);
-	if (err) {
-		LOG_ERR("json_payload_construct, error: %d", err);
-		FATAL_ERROR();
-		return;
+	
+	for (int i=0; i<MAX_SIDES; i++){
+		char *item_number_as_string = malloc(2);
+		sprintf(item_number_as_string, "%d", i);
+		cJSON *side_item = cJSON_CreateObject();
+		cJSON_AddStringToObject(side_item, "id", side_settings[i]->id);
+		cJSON_AddStringToObject(side_item, "type", side_settings[i]->type);
+		cJSON_AddItemToObject(reported, item_number_as_string, side_item);
+		
 	}
+	// cJSON_AddNumberToObject(state, "version", config_version);
+	cJSON_AddItemToObject(state, "reported", reported);	
+	cJSON_AddItemToObject(root, "state", state);
+	}
+	char *message = cJSON_Print(root);
 
 	struct aws_iot_data tx_data = {
 		.qos = MQTT_QOS_0_AT_MOST_ONCE,
@@ -535,13 +525,6 @@ static void shadow_update_work_fn(struct k_work *work)
 		}
 	}
 
-	err = json_payload_construct(message, sizeof(message), &payload);
-	if (err) {
-		LOG_ERR("json_payload_construct, error: %d", err);
-		FATAL_ERROR();
-		return;
-	}
-
 	tx_data.ptr = message;
 	tx_data.len = strlen(message);
 
@@ -553,59 +536,55 @@ static void shadow_update_work_fn(struct k_work *work)
 		FATAL_ERROR();
 		return;
 	}
+	cJSON_free(message);
+	cJSON_Delete(root);
 }
-
-/* System Workqueue handlers. */
-/* put shadow update work infornt of the kwork queue that sends event to aws */
-// static void event_trigger()
-// {
-// 	printk("event_trigger\n");
-// 	/* send shadow_update_work in front of the queue */
-// 	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
-// }
 
 static void counter_stop_fn(struct k_work *work)
 {
-	habit_data message = habit_data_init_zero;
-	date_time_now(&unix_time);
-	message.device_timestamp = int64_to_int32(unix_time);
-	message.data = occurrence_count;
-	message.habit_id.arg = get_habit_id(side);
-	message.habit_id.funcs.encode = &encode_string;
+	// creates message with on count stop
+	if (occurrence_count != 0) {
+		habit_data message = habit_data_init_zero;
+		date_time_now(&unix_time);
+		message.device_timestamp = int64_to_int32(unix_time);
+		message.data = occurrence_count;
+		message.habit_id.arg = side_settings[acctiveSide - 1]->id;
+		message.habit_id.funcs.encode = &encode_string;
+		create_message(message);
+	}
 	occurrence_count = 0;
-	create_message(message);
 }
 
 static void impact_handler(const struct ext_sensor_evt *const evt)
 {
 	switch (evt->type) {
-	case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
-		// if counter is active run the impact handler
-		if (counter_active) {
-			printf("Impact detected: %6.2f g\n", evt->value);
-			// cancel, count one, activate led, and rescedule with 5 secound delay
-			k_work_cancel_delayable(&counter_stop);
-			occurrence_count++;
-			gpio_pin_set_dt(&led, 1);
-			k_work_schedule(&led_off_work, K_SECONDS(0.2));
-			k_work_reschedule(&counter_stop, K_SECONDS(5));
-		}
-	default:
-		break;
+		// when accelerometer impact trigger is detected
+		case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
+			// if counter is active run the impact handler
+			if (counter_active) {
+				printf("Impact detected: %6.2f g\n", evt->value);
+				// cancel counter stop, count one, and rescedule counter stop with 5 secound delay
+				k_work_cancel_delayable(&counter_stop);
+				occurrence_count ++;
+				gpio_pin_set_dt(&led, 1);
+				k_work_schedule(&led_off_work, K_SECONDS(0.2));
+				k_work_reschedule(&counter_stop, K_SECONDS(5));
+				count_sound();
+			}
+		default:
+				break;
 	}
 }
 
 static void start_timer_fn(struct k_work *work)
 {
-	// start_time and send event trigger
 	int ret;
 	ret = date_time_now(&unix_time);
-	// checks if time is updated else try again
 	if (ret == 0) {
 		printk("Starting timer\n");
 		start_time = unix_time;
-		printk("Sending message:\n");
 		gpio_pin_set_dt(&led, 1);
+		time_start_sound();
 	} else {
 		LOG_ERR("Error getting time");
 	}
@@ -613,19 +592,20 @@ static void start_timer_fn(struct k_work *work)
 
 static void stop_timer_fn(struct k_work *work)
 {
-	// stop_time and send event trigger
-	int ret;
-	// checks if time is updated else try again
+	//stop_time and create message
+	int ret = date_time_now(&unix_time);
 	if (ret == 0) {
 		printk("Stopping timer\n");
+		//create message
 		habit_data message = habit_data_init_zero;
 		message.device_timestamp = int64_to_int32(unix_time);
-		message.habit_id.arg = get_habit_id(side);
+		message.habit_id.arg = side_settings[acctiveSide - 1]->id;
 		message.habit_id.funcs.encode = &encode_string;
 		message.start_timestamp = int64_to_int32(start_time);
 		message.stop_timestamp = int64_to_int32(unix_time);
 		create_message(message);
 		k_work_schedule(&led_off_work, K_NO_WAIT);
+		time_stop_sound();
 	} else {
 		LOG_ERR("Error getting time");
 	}
@@ -633,38 +613,77 @@ static void stop_timer_fn(struct k_work *work)
 
 static void set_newSide_fn(struct k_work *work)
 {
-	side = newSide;
+	acctiveSide = newSide;
 	// if the new side is count start the count
-	if (strcmp(get_side_value(side), "COUNT") == 0) {
+	if (strcmp(side_settings[acctiveSide - 1]->type, "COUNT") == 0) {
 		counter_active = true;
 	}
 	// if the new side is time start the timer
-	if (strcmp(get_side_value(side), "TIME") == 0) {
-		printk("Starting timerrrrr\n");
+	if (strcmp(side_settings[acctiveSide - 1]->type, "TIME") == 0) {
 		k_work_reschedule(&start_timer, K_NO_WAIT);
 	}
 }
 
-/* function to check side, runs in separate tread */
-static void check_position()
+static void check_position() 
 {
+	/* function to check side, runs in separate tread */
 	while (true) {
 		newSide = get_side(sensor);
 		// if side is changed and the new side is not -1
-		if (newSide != -1 && side != newSide) {
+		if (newSide != -1 && acctiveSide != newSide) {
 			// if the prew side is count stop the count
-			if (strcmp(get_side_value(side), "COUNT") == 0) {
+			if (strcmp(side_settings[acctiveSide - 1]->type, "COUNT") == 0) {
 				counter_active = false;
 				k_work_reschedule(&counter_stop, K_NO_WAIT);
 			}
 			// if the prew side is time stop the timer
-			if (strcmp(get_side_value(side), "TIME") == 0) {
+			if (strcmp(side_settings[acctiveSide - 1]->type, "TIME") == 0) {
 				k_work_reschedule(&stop_timer, K_NO_WAIT);
 			}
 			// set the new side
 			k_work_reschedule(&set_newSide, K_NO_WAIT);
 		}
 	}
+}
+
+int send_shadow_update_msg(char *msg){
+	struct aws_iot_data tx_data = {
+		.qos = MQTT_QOS_0_AT_MOST_ONCE,
+		.topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
+	};
+
+	tx_data.ptr = msg;
+	tx_data.len = strlen(msg);
+
+	int err = aws_iot_send(&tx_data);
+	if (err) {
+		LOG_ERR("aws_iot_send, error: %d", err);
+		return err;
+	}
+	return 0;
+
+}
+
+void on_first_run(void)
+{
+	// Store defaults in settings (empty strings)
+	for (int i = 0; i < MAX_SIDES; i++) {
+		side_settings[i]->id = "";
+		side_settings[i]->type = "";
+		save_side_config(i, *side_settings[i]);
+	}
+	config_version = 0;
+	settings_save_one("config_version", 0, sizeof(0));
+	// Create CJSON object with "state": {"reported": {null}}
+	cJSON *root = cJSON_CreateObject();
+	cJSON *state = cJSON_CreateObject();
+	cJSON *reported = cJSON_CreateNull();
+	cJSON_AddItemToObject(state, "reported", reported);
+	cJSON_AddItemToObject(root, "state", state);
+	char *out = cJSON_Print(root);
+	int err = send_shadow_update_msg(out);
+	first_run = false;
+	
 }
 
 static void connect_work_fn(struct k_work *work)
@@ -756,19 +775,12 @@ static void on_net_event_l4_disconnected(void)
 	(void)k_work_cancel_delayable(&shadow_update_work);
 }
 
-static void save_side_config(int side, Settings_data side_settings)
-{
+
+void save_side_config(int side, Settings_data side_settings){
 	char name[20];
-	sprintf(name, "side_%d/timestamp", side);
-	int ret =
-		settings_save_one(name, &side_settings.timestamp, sizeof(side_settings.timestamp));
-	if (ret) {
-		printk("Error saving side_%d/timestamp: %d\n", side, ret);
-	}
-
+	
 	sprintf(name, "side_%d/id", side);
-	ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
-
+	int ret = settings_save_one(name, &side_settings.id, sizeof(side_settings.id));
 	if (ret) {
 		printk("Error saving side_%d/id: %d\n", side, ret);
 	}
@@ -777,7 +789,9 @@ static void save_side_config(int side, Settings_data side_settings)
 	ret = settings_save_one(name, &side_settings.type, sizeof(side_settings.type));
 	if (ret) {
 		printk("Error saving side_%d/type: %d\n", side, ret);
-	}
+	} 
+	printk("Saved side_%d/id: %s\n", side, side_settings.id);
+	printk("Saved side_%d/type: %s\n", side, side_settings.type);
 }
 
 static int start_settings_subsystem()
@@ -794,12 +808,103 @@ static int start_settings_subsystem()
 			return err;
 		}
 	}
+	err = settings_register(&config_version_conf);
+	if (err) {
+		printk("Error registering settings for config_version: %d\n", err);
+		return err;
+		}
 	err = settings_load();
 	if (err) {
 		printk("Error loading settings: %d\n", err);
 		return err;
 	}
 	return 0;
+}
+
+static void parse_config_json(const char *json){
+	cJSON *root = cJSON_Parse(json);
+	if (root == NULL) {
+			const char *error_ptr = cJSON_GetErrorPtr();
+			if (error_ptr != NULL) {
+					printk("Error before: %s\n", error_ptr);
+			}
+			return;
+	}
+
+	// Get version
+	cJSON *version = cJSON_GetObjectItem(root, "version");
+	if (cJSON_IsNumber(version)) {
+			printk("Version: %d\n", version->valueint);
+	} else {
+			printk("Version is not a number\n");
+	}
+
+	// Get timestamp
+	cJSON *timestamp = cJSON_GetObjectItem(root, "timestamp");
+	if (cJSON_IsNumber(timestamp)) {
+		printk("Timestamp: %d\n", timestamp->valueint);
+	} else {
+		printk("Timestamp is not a number\n");
+	}
+
+    // Get state
+    cJSON *state = cJSON_GetObjectItem(root, "state");
+    if (state != NULL) {
+        // Iterate over each side config in state
+        for (cJSON *side_config = state->child; side_config != NULL; side_config = side_config->next) {
+            // Get side number
+            int side = atoi(side_config->string);
+            // Get id and type
+            cJSON *id = cJSON_GetObjectItem(side_config, "id");
+            cJSON *type = cJSON_GetObjectItem(side_config, "type");
+
+            if (id != NULL && cJSON_IsString(id)) {
+				side_settings[side]->id = malloc(strlen(id->valuestring) + 1);
+				if (side_settings[side]->id == NULL) {
+					printk("Failed to allocate memory for id\n");
+					return;
+				}
+				strcpy(side_settings[side]->id, id->valuestring);
+
+				if (type != NULL && cJSON_IsString(type)) {
+                if (strcmp(type->valuestring, "TIME") == 0) {
+                    side_settings[side]->type = "TIME";
+                } else if (strcmp(type->valuestring, "COUNT") == 0) {
+                    side_settings[side]->type = "COUNT";
+                } 
+            	} else {
+					printk("Copied type from previous: %s\n", side_settings[side]->type);
+				}
+				save_side_config(side, *side_settings[side]);
+            } else {
+				printk("Throwing away side config due to invalid id or type\n");
+				}
+      }
+    } else {
+        printk("State is not an object\n");
+    }
+	config_version = version->valueint;
+	settings_save_one("config_version", &config_version, sizeof(config_version));;
+
+	// Duplicate contents of state to reported
+	cJSON *reported = cJSON_Duplicate(state, 1);
+	cJSON *state_reported = cJSON_CreateObject();
+	cJSON_AddItemToObject(state_reported, "reported", reported);
+	cJSON_ReplaceItemInObject(root, "state", state_reported);
+
+	// Delete metadata, version and timestamp
+	cJSON_DeleteItemFromObject(root, "metadata");
+	cJSON_DeleteItemFromObject(root, "timestamp");
+	cJSON_DeleteItemFromObject(root, "version");
+
+	// Print json
+	char *out = cJSON_Print(root);
+
+	send_shadow_update_msg(out);
+
+	// Free json
+	cJSON_free(out);
+	cJSON_Delete(root);
 }
 
 /* Event handlers */
@@ -816,11 +921,17 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_READY:
 		LOG_INF("AWS_IOT_EVT_READY");
+		if (first_run){
+			on_first_run();
+		}
 		/* on iot ready create a new thred for start to check the position */
-		// k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
-		// 		check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO,
-		// 		0, K_NO_WAIT);
+		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
+				check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO,
+				0, K_NO_WAIT);
 		/* set button pressed as buttons funcion */
+		// gpio_init_callback(&button_cb_data, create_message, BIT(button.pin));
+		// gpio_add_callback(button.port, &button_cb_data);
+		// printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
@@ -828,9 +939,17 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	case AWS_IOT_EVT_DATA_RECEIVED:
 		LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
-		// save_config(evt->data.msg.topic.str, sizeof(evt->data.msg.topic.str));
 		LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
 			evt->data.msg.ptr, evt->data.msg.topic.len, evt->data.msg.topic.str);
+		char delta_topic[128];  
+		snprintf(delta_topic, sizeof(delta_topic), AWS_IOT_SHADOW_TOPIC_UPDATE_DELTA, CONFIG_AWS_IOT_CLIENT_ID_STATIC);
+		if (strncmp(evt->data.msg.topic.str, delta_topic, evt->data.msg.topic.len) == 0) {
+			printk("Received delta message, parsing config\n");
+			config_received_sound();
+			parse_config_json(evt->data.msg.ptr);
+		}  else {
+			printk("Received message on unexpected topic\n");
+		}
 		break;
 	case AWS_IOT_EVT_PUBACK:
 		LOG_INF("AWS_IOT_EVT_PUBACK, message ID: %d", evt->data.message_id);
@@ -865,6 +984,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		break;
 	}
 }
+
 
 static void l4_event_handler(struct net_mgmt_event_callback *cb, uint32_t event,
 			     struct net_if *iface)
@@ -930,6 +1050,13 @@ static int init_button()
 
 static void create_message(habit_data message)
 {
+	//define topic based on the thing
+	char event_topic[128];  
+	snprintf(event_topic, sizeof(event_topic), HABIT_EVENT_TOPIC, CONFIG_AWS_IOT_CLIENT_ID_STATIC);
+	struct aws_iot_topic_data myTopic = {
+					.str = event_topic,
+					.len = strlen(event_topic),
+	};
 	// Create a buffer to hold the serialized data
 	uint8_t buffer[128];
 	pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
@@ -937,10 +1064,10 @@ static void create_message(habit_data message)
 	// Encode the message
 	bool status = pb_encode(&stream, habit_data_fields, &message);
 	if (!status) {
-		printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
-		return;
+			printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+			return;
 	}
-
+	
 	printf("send protobuff message \n");
 	struct aws_iot_data data = {
 		.qos = MQTT_QOS_0_AT_MOST_ONCE,
@@ -949,7 +1076,6 @@ static void create_message(habit_data message)
 		.len = stream.bytes_written,
 	};
 
-	// LOG_INF("Publishing message: %s to AWS IoT shadow", data.ptr);
 	int err = aws_iot_send(&data);
 	if (err) {
 		LOG_ERR("aws_iot_send, error: %d", err);
@@ -959,107 +1085,10 @@ static void create_message(habit_data message)
 	return;
 }
 
-int play_tone(int frequency, int duration)
-{
-	if (!pwm_is_ready_dt(&sBuzzer)) {
-		printk("Error: PWM device %s is not ready\n",
-		       sBuzzer.dev->name);
-		return -1;
-	}
-	uint32_t pwm_period_ns = NSEC_PER_SEC / frequency;
-	uint32_t pwm_duty_cycle_ns = pwm_period_ns / 16;
-	// Set the PWM period and duty cycle
-	if (pwm_set_dt(&sBuzzer, pwm_period_ns, pwm_duty_cycle_ns)) {
-        printk("Error: Failed to set PWM period and duty cycle\n");
-        return -2;
-    }
-
-	// Play the tone for the specified duration
-	k_sleep(K_MSEC(duration));
-
-	// Turn off the PWM signal
-	if (pwm_set_dt(&sBuzzer, 0, 0)) {
-        printk("Error: Failed to turn off note\n");
-        return -3;
-    }
-
-	return 0;
-}
-
-void boot_sound() {
-    play_tone(264, 250);
-    k_sleep(K_MSEC(500));
-    play_tone(264, 250);
-    k_sleep(K_MSEC(250));
-    play_tone(297, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(264, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(352, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(330, 2000);
-    k_sleep(K_MSEC(500));
-    play_tone(264, 250);
-    k_sleep(K_MSEC(500));
-    play_tone(264, 250);
-    k_sleep(K_MSEC(250));
-    play_tone(297, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(264, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(396, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(352, 2000);
-    k_sleep(K_MSEC(500));
-    play_tone(264, 250);
-    k_sleep(K_MSEC(500));
-    play_tone(264, 250);
-    k_sleep(K_MSEC(250));
-    play_tone(264, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(440, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(352, 500);
-    k_sleep(K_MSEC(250));
-    play_tone(352, 250);
-    k_sleep(K_MSEC(250));
-    play_tone(330, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(297, 2000);
-    k_sleep(K_MSEC(500));
-    play_tone(466, 250);
-    k_sleep(K_MSEC(500));
-    play_tone(466, 250);
-    k_sleep(K_MSEC(250));
-    play_tone(440, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(352, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(396, 1000);
-    k_sleep(K_MSEC(250));
-    play_tone(352, 2000);
-    k_sleep(K_MSEC(250));
-}
-
-int alternative_boot_sound(){
-	int ret;
-	ret = play_tone(1760, 100);
-	
-	ret = play_tone(2637, 500);
-
-	k_sleep(K_MSEC(1000));
-	return ret;
-}
-
-
-
 
 int main(void)
 {
 	int ret;
-
-	alternative_boot_sound();
-	boot_sound();
 
 	// initialize led function
 	ret = init_led();
@@ -1080,6 +1109,18 @@ int main(void)
 		LOG_ERR("Error starting settings subsystem: %d", err);
 		FATAL_ERROR();
 		return err;
+	}
+
+	ret = ext_sensors_init(impact_handler);
+	if (ret) {
+			printf("Error initializing sensors: %d\n", ret);
+			return ret;
+	}
+
+	//Print all loaded settings
+	for (int i = 0; i < MAX_SIDES; i++) {
+		printk("Side %d id: %s\n", i, side_settings[i]->id);
+		printk("Side %d type: %s\n", i, side_settings[i]->type);
 	}
 
 	// start the aws iot sample
