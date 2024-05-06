@@ -3,7 +3,6 @@
  *
  * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
-
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/dfu/mcuboot.h>
@@ -18,15 +17,14 @@
 #include <modem/modem_info.h>
 #include "json_payload.h"
 #include "settings_defs.h"
-
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/drivers/sensor.h>
 #include <ext_sensors.h>
-
 #include <date_time.h>
+#include <zephyr/drivers/pwm.h>
 
 /*Settings and NVS*/
 #include <zephyr/settings/settings.h>
@@ -36,12 +34,12 @@
 #include <string.h>
 #include <inttypes.h>
 #include <zephyr/sys/printk.h>
-
-/*Protobuf*/
+#include "../ext_sensors/ext_sensors.h"
 #include <pb.h>
 #include <pb_common.h>
 #include <pb_encode.h>
 #include <pb_decode.h>
+#include <src/data.pb.h>
 
 /*CJson*/
 #include <cJSON.h>
@@ -49,14 +47,8 @@
 // AWS IoT Topics
 #define AWS_IOT_SHADOW_TOPIC_UPDATE_DELTA "$aws/things/%s/shadow/update/delta"
 #define HABIT_EVENT_TOPIC "habit-tracker-data/%s/events"
+struct pwm_dt_spec sBuzzer = PWM_DT_SPEC_GET(DT_ALIAS(buzzer_pwn));
 
-/* button */
-#define SW0_NODE DT_ALIAS(sw0)
-#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
-#error "Unsupported board: sw0 devicetree alias is not defined"
-#endif
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
-static struct gpio_callback button_cb_data;
 
 typedef struct settings_data Settings_data; 
 
@@ -91,138 +83,60 @@ struct settings_handler config_version_conf = {
 	.h_set = config_version_set,
 };
 
-#include "../ext_sensors/ext_sensors.h"
-
 /* Register log module */
 LOG_MODULE_REGISTER(dodd, CONFIG_AWS_IOT_SAMPLE_LOG_LEVEL);
 
 /* Macros used to subscribe to specific Zephyr NET management events. */
 #define L4_EVENT_MASK	      (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
 #define CONN_LAYER_EVENT_MASK (NET_EVENT_CONN_IF_FATAL_ERROR)
-
 #define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
 
 /* Macro called upon a fatal error, reboots the device. */
-#define FATAL_ERROR()                                                                        \
+#define FATAL_ERROR()                                                                              \
 	LOG_ERR("Fatal error! Rebooting the device.");                                             \
 	LOG_PANIC();                                                                               \
 	IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
 
 /* additional definitions */
 
-/*
- * Sensor variables
- */
-/* Sensor device */
+/* Sensor definitions */
 static const struct device *sensor = DEVICE_DT_GET(DT_NODELABEL(adxl362));
-/* Sensor channels */
 static const enum sensor_channel channels[] = {
 	SENSOR_CHAN_ACCEL_X,
 	SENSOR_CHAN_ACCEL_Y,
 	SENSOR_CHAN_ACCEL_Z,
 };
-/* Sensor data */
 struct sensor_value accel[3];
 char accelX[10];
 char accelY[10];
 char accelZ[10];
 
 /* counter variables */
-int occurrence_count = 0;
+int32_t occurrence_count = 0;
 bool counter_active = false;
 
 /* time variables */
 int64_t unix_time;
 int64_t start_time;
-int64_t stop_time;
 
-/* LED */
+/* led definition */
 #define LED0_NODE DT_ALIAS(led0)
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
-/* Side of the device for sending based on rotation */
-int side = 0;
+/* button definition */
+#define SW0_NODE DT_ALIAS(sw0)
+#if !DT_NODE_HAS_STATUS(SW0_NODE, okay)
+#error "Unsupported board: sw0 devicetree alias is not defined"
+#endif
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
+static struct gpio_callback button_cb_data;
+
+/* side definitions */
+// Side of the device for sending based on rotation
+int acctiveSide = 0;
 int newSide;
-int correct_side;
-
-// temporarly values for sides. "" is default, "COUNT" is count, "TIMER" is timer
-char *side_0 = "TIME";
-char *side_1 = "COUNT";
-char *side_2 = "TIME";
-char *side_3 = "COUNT";
-char *side_4 = "TIME";
-char *side_5 = "COUNT";
-char *side_6 = "TIME";
-char *side_7 = "COUNT";
-char *side_8 = "";
-char *side_9 = "";
-char *side_10 = "";
-
-
-
-/* Zephyr NET management event callback structures. */
-static struct net_mgmt_event_callback l4_cb;
-static struct net_mgmt_event_callback conn_cb;
-
-/* Forward declarations. */
-static void shadow_update_work_fn(struct k_work *work);
-static void connect_work_fn(struct k_work *work);
-static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
-static void check_position();
-static void turn_led_off(struct k_work *work);
-
-/* Work items used to control some aspects of the sample. */
-static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
-static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
-static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
-
-/* Create thread for checking the position of the device */
-K_THREAD_STACK_DEFINE(stack_area, 2048);
-struct k_thread check_pos_data;
-
-
-/* Static functions */
-static void turn_led_off(struct k_work *work)
-{
-	//turn led off in a work function
-	gpio_pin_set_dt(&led, 0);
-}
-
-static int fetch_accels(const struct device *dev)
-{
-	/*
-	 *	Fetch sensor data from the accelerometer sensor
-	 *	saves and prints the sensor data as string to be sent to AWS IoT
-	 */
-	int ret;
-	/*	Check if device is ready, if not return 0	*/
-	if (!device_is_ready(dev)) {
-		printk("sensor: device not ready.\n");
-		return 0;
-	} else {
-		printk("sensor: device ready.\n");
-	}
-
-	ret = sensor_sample_fetch(dev);
-	if (ret < 0) {
-		printk("sensor_sample_fetch() failed: %d\n", ret);
-		return ret;
-	}
-
-	/* Get sensor data */
-	for (size_t i = 0; i < ARRAY_SIZE(channels); i++) {
-		ret = sensor_channel_get(dev, channels[i], &accel[i]);
-		if (ret < 0) {
-			printk("sensor_channel_get(%c) failed: %d\n", 'X' + i, ret);
-			return ret;
-		}
-	}
-	snprintf(accelX, sizeof(accelX), "%f", sensor_value_to_double(&accel[0]));
-	snprintf(accelY, sizeof(accelY), "%f", sensor_value_to_double(&accel[1]));
-	snprintf(accelZ, sizeof(accelZ), "%f", sensor_value_to_double(&accel[2]));
-
-	return 0;
-}
+// Real-time side
+int rt_side;
 
 double Xaccel[10] = {};
 double Yaccel[10] = {};
@@ -233,7 +147,6 @@ double medianY;
 double medianZ;
 
 /*Config for each side*/
-
 struct each_side {
 	double accelX;
 	double accelY;
@@ -256,7 +169,146 @@ struct each_side normal_vectors[12] = {
 	{0.005361934, -0.033163197, 0.995770246},   // side 11
 };
 
-int compare(const void *a, const void *b)
+/*help values to store double values to send to aws*/
+char median_values_X[10];
+char median_values_Y[10];
+char median_values_Z[10];
+
+/* Zephyr NET management event callback structures. */
+static struct net_mgmt_event_callback l4_cb;
+static struct net_mgmt_event_callback conn_cb;
+
+/* Forward declarations. */
+static void shadow_update_work_fn(struct k_work *work);
+static void connect_work_fn(struct k_work *work);
+static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
+static void counter_stop_fn(struct k_work *work);
+static void set_newSide_fn(struct k_work *work);
+static void start_timer_fn(struct k_work *work);
+static void stop_timer_fn(struct k_work *work);
+static void turn_led_off(struct k_work *work);
+static void check_position();
+static void create_message();
+
+/* Work items used to control some aspects of the sample. */
+static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
+static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
+static K_WORK_DELAYABLE_DEFINE(led_off_work, turn_led_off);
+static K_WORK_DELAYABLE_DEFINE(counter_stop, counter_stop_fn);
+static K_WORK_DELAYABLE_DEFINE(set_newSide, set_newSide_fn);
+static K_WORK_DELAYABLE_DEFINE(start_timer, start_timer_fn);
+static K_WORK_DELAYABLE_DEFINE(stop_timer, stop_timer_fn);
+
+/* Create thread for checking the position of the device */
+K_THREAD_STACK_DEFINE(stack_area, 2048);
+struct k_thread check_pos_data;
+
+
+
+/* Static functions */
+static void buzzer()
+{
+	int ret;
+	printk("Buzzer\n");
+	ret = pwm_set_dt(&sBuzzer, PWM_HZ(500), PWM_HZ(1000) / 2);
+  // pwm_capture_nsec(&sBuzzer, PWM_HZ(500), PWM_HZ(1000) / 2, 200);
+	//pwm_set_dt(&sBuzzer, PWM_HZ(1000), PWM_HZ(1000) / 2);
+}
+
+static int play_tone(int frequency, int duration, int volume)
+{
+	if (!pwm_is_ready_dt(&sBuzzer)) {
+		printk("Error: PWM device %s is not ready\n",
+		       sBuzzer.dev->name);
+		return -1;
+	}
+	
+	int division_factor = 32 - volume / 3;
+	if (volume > 95) {
+		division_factor = 1;
+	} else if (volume < 5) {
+		division_factor = 32;
+	}
+	uint32_t pwm_period_ns = NSEC_PER_SEC / frequency;
+	uint32_t pwm_duty_cycle_ns = pwm_period_ns / division_factor;
+	// Set the PWM period and duty cycle
+	if (pwm_set_dt(&sBuzzer, pwm_period_ns, pwm_duty_cycle_ns)) {
+        printk("Error: Failed to set PWM period and duty cycle\n");
+        return -2;
+    }
+
+	// Play the tone for the specified duration
+	k_sleep(K_MSEC(duration));
+
+	// Turn off the PWM signal
+	if (pwm_set_dt(&sBuzzer, 0, 0)) {
+        printk("Error: Failed to turn off note\n");
+        return -3;
+    }
+
+	return 0;
+}
+
+static int config_received_sound(){
+	int ret;
+	ret = play_tone(1760, 100, 50);
+	
+	ret = play_tone(2637, 500, 50);
+
+	return ret;
+}
+
+static int count_sound() {
+	int ret;
+	ret = play_tone(1000, 100, 25);
+	return ret;
+}
+
+static int time_start_sound(){
+	int ret;
+	ret = play_tone(500, 50, 50);
+	ret = play_tone(600, 50, 50);
+	ret = play_tone(700, 50, 50);
+	ret = play_tone(800, 50, 50);
+	ret = play_tone(900, 50, 50);
+	ret = play_tone(1000, 50, 50);
+	return ret;
+}
+
+static int time_stop_sound(){
+	int ret;
+	ret = play_tone(1000, 50, 50);
+	ret = play_tone(900, 50, 50);
+	ret = play_tone(800, 50, 50);
+	ret = play_tone(700, 50, 50);
+	ret = play_tone(600, 50, 50);
+	ret = play_tone(500, 50, 50);
+	return ret;
+}
+
+static int32_t int64_to_int32(int64_t large_value)
+{
+	// scale down int64 to int32
+	return (int32_t)(large_value / 1000);
+}
+
+static bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void *const *arg)
+{
+	// encode string so protobuff accept it
+	const char *str = (const char *)(*arg);
+	if (!pb_encode_tag_for_field(stream, field)) {
+		return false;
+	}
+	return pb_encode_string(stream, (uint8_t *)str, strlen(str));
+}
+
+static void turn_led_off(struct k_work *work)
+{
+	// turn led off in a work function
+	gpio_pin_set_dt(&led, 0);
+}
+
+static int compare(const void *a, const void *b)
 {
 	double *double_a = (double *)a;
 	double *double_b = (double *)b;
@@ -271,7 +323,7 @@ int compare(const void *a, const void *b)
 }
 
 /* Function to calculate median*/
-double calculate_median(double accel[], int array_size)
+static double calculate_median(double accel[], int array_size)
 {
 	// sort list
 	qsort(accel, array_size, sizeof(int), compare);
@@ -285,13 +337,13 @@ double calculate_median(double accel[], int array_size)
 }
 
 /*Calculate dot product of two vectors*/
-double vector_dot_product(double vector1[], double vector2[])
+static double vector_dot_product(double vector1[], double vector2[])
 {
 	return vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector2[2];
 }
 
 /*Returns what side is up on the dodd*/
-int find_what_side(struct each_side sides[], int number_of_sides)
+static int find_what_side(struct each_side sides[], int number_of_sides)
 {
 
 	double median_vector[3] = {medianX, medianY, medianZ};
@@ -312,13 +364,8 @@ int find_what_side(struct each_side sides[], int number_of_sides)
 	return -1; // error if valus are not in range
 }
 
-/*help values to store double values to send to aws*/
-char median_values_X[10];
-char median_values_Y[10];
-char median_values_Z[10];
-
 /*Use a median filter to remove noise from accel values*/
-void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
+static void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms)
 {
 	int ret;
 
@@ -355,21 +402,16 @@ void sampling_filter(int number_of_samples, const struct device *dev, int32_t ms
 
 static int get_side(const struct device *dev)
 {
-
 	//	Check if device is ready, if not return 0
 	if (!device_is_ready(dev)) {
 		printk("sensor: device not ready.\n");
 		return 0;
 	}
-
 	// apply median filter to accel values
 	sampling_filter(10, dev, 100);
-
 	// find what side is up
-	correct_side = find_what_side(normal_vectors, 12);
-
-	//printk("Side: %i \n", correct_side);
-	return correct_side;
+	rt_side = find_what_side(normal_vectors, 12);
+	return rt_side;
 }
 
 static int app_topics_subscribe(void)
@@ -498,130 +540,110 @@ static void shadow_update_work_fn(struct k_work *work)
 	cJSON_Delete(root);
 }
 
-/* System Workqueue handlers. */
-/* put shadow update work infornt of the kwork queue that sends event to aws */
-static void event_trigger()
+static void counter_stop_fn(struct k_work *work)
 {
-	printk("event_trigger\n");
-	/* send shadow_update_work in front of the queue */
-	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+	// creates message with on count stop
+	if (occurrence_count != 0) {
+		habit_data message = habit_data_init_zero;
+		date_time_now(&unix_time);
+		message.device_timestamp = int64_to_int32(unix_time);
+		message.data = occurrence_count;
+		message.habit_id.arg = side_settings[acctiveSide - 1]->id;
+		message.habit_id.funcs.encode = &encode_string;
+		create_message(message);
+	}
+	occurrence_count = 0;
 }
 
 static void impact_handler(const struct ext_sensor_evt *const evt)
 {
 	switch (evt->type) {
-			case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
-					// if counter is active run the impact handler
-					if (counter_active) {
-						printf("Impact detected: %6.2f g\n", evt->value);
-						// cancel shadow_update, count one, activate led, and rescedule shadow_update with 5 secound delay
-						(void)k_work_cancel_delayable(&shadow_update_work);
-						occurrence_count ++;
-						gpio_pin_set_dt(&led, 1);
-						k_work_schedule(&led_off_work, K_SECONDS(0.2));
-						(void)k_work_reschedule(&shadow_update_work, K_SECONDS(5));
-					}
-			default:
-					break;
+		// when accelerometer impact trigger is detected
+		case EXT_SENSOR_EVT_ACCELEROMETER_IMPACT_TRIGGER:
+			// if counter is active run the impact handler
+			if (counter_active) {
+				printf("Impact detected: %6.2f g\n", evt->value);
+				// cancel counter stop, count one, and rescedule counter stop with 5 secound delay
+				k_work_cancel_delayable(&counter_stop);
+				occurrence_count ++;
+				gpio_pin_set_dt(&led, 1);
+				k_work_schedule(&led_off_work, K_SECONDS(0.2));
+				k_work_reschedule(&counter_stop, K_SECONDS(5));
+				count_sound();
+			}
+		default:
+				break;
 	}
 }
 
-static void start_timer()
+static void start_timer_fn(struct k_work *work)
 {
-	//start_time and send event trigger
 	int ret;
 	ret = date_time_now(&unix_time);
-	//checks if time is updated else try again
 	if (ret == 0) {
 		printk("Starting timer\n");
 		start_time = unix_time;
 		gpio_pin_set_dt(&led, 1);
-		event_trigger();
-	}
-	else {
+		time_start_sound();
+	} else {
 		LOG_ERR("Error getting time");
-		k_msleep(2000);
-		start_timer();
 	}
 }
 
-static void stop_timer() 
+static void stop_timer_fn(struct k_work *work)
 {
-	//stop_time and send event trigger
-	int ret;
-	ret = date_time_now(&unix_time);
-	//checks if time is updated else try again
+	//stop_time and create message
+	int ret = date_time_now(&unix_time);
 	if (ret == 0) {
 		printk("Stopping timer\n");
-		stop_time = unix_time;
+		//create message
+		habit_data message = habit_data_init_zero;
+		message.device_timestamp = int64_to_int32(unix_time);
+		message.habit_id.arg = side_settings[acctiveSide - 1]->id;
+		message.habit_id.funcs.encode = &encode_string;
+		message.start_timestamp = int64_to_int32(start_time);
+		message.stop_timestamp = int64_to_int32(unix_time);
+		create_message(message);
 		k_work_schedule(&led_off_work, K_NO_WAIT);
-		event_trigger();
-	}
-	else {
+		time_stop_sound();
+	} else {
 		LOG_ERR("Error getting time");
-		k_msleep(2000);
-		stop_timer();
 	}
 }
 
-// returns the value of the side based on the side number
-static char *get_side_value(int side) {
-	switch (side) {
-		case 1:
-			return side_0;
-		case 2:
-			return side_1;
-		case 3:
-			return side_2;
-		case 4:
-			return side_3;
-		case 5:
-			return side_4;
-		case 6:
-			return side_5;
-		case 7:
-			return side_6;
-		case 8:
-			return side_7;
-		case 9:
-			return side_8;
-		case 10:
-			return side_9;
-		case 11:
-			return side_10;
-		default:
-			return "";
+static void set_newSide_fn(struct k_work *work)
+{
+	acctiveSide = newSide;
+	// if the new side is count start the count
+	if (strcmp(side_settings[acctiveSide - 1]->type, "COUNT") == 0) {
+		counter_active = true;
+	}
+	// if the new side is time start the timer
+	if (strcmp(side_settings[acctiveSide - 1]->type, "TIME") == 0) {
+		k_work_reschedule(&start_timer, K_NO_WAIT);
 	}
 }
 
-/* function to check side, runs in separate tread */
 static void check_position() 
 {
-   while (true) {
-        newSide = get_side(sensor);
-				// if side is changed and the new side is not -1
-        if (newSide != -1 && side != newSide) {
-					// if the prew side is count stop the count
-					if (strcmp(get_side_value(side), "COUNT") == 0) {
-						counter_active = false;
-					}
-					// if the prew side is time stop the timer
-					if (strcmp(get_side_value(side), "TIME") == 0) {
-						stop_timer();
-						k_msleep(100);
-					}
-					// set the new side
-					side = newSide;
-					// if the new side is count start the count
-					if (strcmp(get_side_value(side), "COUNT") == 0) {
-						counter_active = true;
-					}
-					// if the new side is time start the timer
-					if (strcmp(get_side_value(side), "TIME") == 0) {
-						start_timer();
-					}
-        }
-    }
+	/* function to check side, runs in separate tread */
+	while (true) {
+		newSide = get_side(sensor);
+		// if side is changed and the new side is not -1
+		if (newSide != -1 && acctiveSide != newSide) {
+			// if the prew side is count stop the count
+			if (strcmp(side_settings[acctiveSide - 1]->type, "COUNT") == 0) {
+				counter_active = false;
+				k_work_reschedule(&counter_stop, K_NO_WAIT);
+			}
+			// if the prew side is time stop the timer
+			if (strcmp(side_settings[acctiveSide - 1]->type, "TIME") == 0) {
+				k_work_reschedule(&stop_timer, K_NO_WAIT);
+			}
+			// set the new side
+			k_work_reschedule(&set_newSide, K_NO_WAIT);
+		}
+	}
 }
 
 int send_shadow_update_msg(char *msg){
@@ -683,7 +705,6 @@ static void connect_work_fn(struct k_work *work)
 }
 
 /* Functions that are executed on specific connection-related events. */
-
 static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 {
 	(void)k_work_cancel_delayable(&connect_work);
@@ -695,17 +716,6 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 		LOG_WRN("Persistent session is enabled, using subscriptions "
 			"from the previous session");
 	}
-
-  /* set button pressed as buttons funcion */
-	gpio_init_callback(&button_cb_data, event_trigger, BIT(button.pin));
-	gpio_add_callback(button.port, &button_cb_data);
-	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
-
-	/* Start to check the position */
-	// check_position();
-
-	// Send current state
-	(void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
 }
 
 static void on_aws_iot_evt_disconnected(void)
@@ -915,7 +925,13 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 			on_first_run();
 		}
 		/* on iot ready create a new thred for start to check the position */
-		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area), check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+		k_thread_create(&check_pos_data, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
+				check_position, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO,
+				0, K_NO_WAIT);
+		/* set button pressed as buttons funcion */
+		// gpio_init_callback(&button_cb_data, create_message, BIT(button.pin));
+		// gpio_add_callback(button.port, &button_cb_data);
+		// printk("Set up button at %s pin %d\n", button.port->name, button.pin);
 		break;
 	case AWS_IOT_EVT_DISCONNECTED:
 		LOG_INF("AWS_IOT_EVT_DISCONNECTED");
@@ -929,6 +945,7 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 		snprintf(delta_topic, sizeof(delta_topic), AWS_IOT_SHADOW_TOPIC_UPDATE_DELTA, CONFIG_AWS_IOT_CLIENT_ID_STATIC);
 		if (strncmp(evt->data.msg.topic.str, delta_topic, evt->data.msg.topic.len) == 0) {
 			printk("Received delta message, parsing config\n");
+			config_received_sound();
 			parse_config_json(evt->data.msg.ptr);
 		}  else {
 			printk("Received message on unexpected topic\n");
@@ -1031,15 +1048,60 @@ static int init_button()
 	return ret;
 }
 
+static void create_message(habit_data message)
+{
+	//define topic based on the thing
+	char event_topic[128];  
+	snprintf(event_topic, sizeof(event_topic), HABIT_EVENT_TOPIC, CONFIG_AWS_IOT_CLIENT_ID_STATIC);
+	struct aws_iot_topic_data myTopic = {
+					.str = event_topic,
+					.len = strlen(event_topic),
+	};
+	// Create a buffer to hold the serialized data
+	uint8_t buffer[128];
+	pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+
+	// Encode the message
+	bool status = pb_encode(&stream, habit_data_fields, &message);
+	if (!status) {
+			printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+			return;
+	}
+	
+	printf("send protobuff message \n");
+	struct aws_iot_data data = {
+		.qos = MQTT_QOS_0_AT_MOST_ONCE,
+		.topic = myTopic,
+		.ptr = buffer,
+		.len = stream.bytes_written,
+	};
+
+	int err = aws_iot_send(&data);
+	if (err) {
+		LOG_ERR("aws_iot_send, error: %d", err);
+		FATAL_ERROR();
+		return;
+	}
+	return;
+}
+
 
 int main(void)
 {
 	int ret;
-	
+
 	// initialize led function
 	ret = init_led();
 	// initialize button function
 	ret = init_button();
+	gpio_init_callback(&button_cb_data, buzzer, BIT(button.pin));
+	gpio_add_callback(button.port, &button_cb_data);
+	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
+	ret = ext_sensors_init(impact_handler);
+	if (ret) {
+		printf("Error initializing sensors: %d\n", ret);
+		return ret;
+	}
 
 	int err;
 	err = start_settings_subsystem();
@@ -1055,7 +1117,7 @@ int main(void)
 			return ret;
 	}
 
-	// Print all loaded settings
+	//Print all loaded settings
 	for (int i = 0; i < MAX_SIDES; i++) {
 		printk("Side %d id: %s\n", i, side_settings[i]->id);
 		printk("Side %d type: %s\n", i, side_settings[i]->type);
@@ -1064,8 +1126,20 @@ int main(void)
 	// start the aws iot sample
 	LOG_INF("The AWS IoT sample started, version: %s", CONFIG_AWS_IOT_SAMPLE_APP_VERSION);
 
-	/* init the aws connection */
+	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	if (ret != 0) {
+		printk("Error %d: failed to configure %s pin %d\n", ret, button.port->name,
+		       button.pin);
+		return 0;
+	}
+	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+	if (ret != 0) {
+		printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
+		       button.port->name, button.pin);
+		return 0;
+	}
 
+	/* init the aws connection */
 	/* Setup handler for Zephyr NET Connection Manager events. */
 	net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
 	net_mgmt_add_event_callback(&l4_cb);
@@ -1099,7 +1173,6 @@ int main(void)
 	 */
 	if (IS_ENABLED(CONFIG_BOARD_QEMU_X86)) {
 		conn_mgr_mon_resend_status();
-	}	
-
-    return 0;
+	}
+	return 0;
 }
