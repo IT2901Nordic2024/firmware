@@ -682,6 +682,9 @@ void on_first_run(void)
 	cJSON_AddItemToObject(root, "state", state);
 	char *out = cJSON_Print(root);
 	int err = send_shadow_update_msg(out);
+	if (err) {
+		LOG_ERR("Failed to send shadow update message");
+	}
 	first_run = false;
 	
 }
